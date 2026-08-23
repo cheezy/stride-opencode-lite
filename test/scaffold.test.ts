@@ -48,6 +48,37 @@ describe("package.json", () => {
     expect(files.some((entry) => entry.startsWith("test/"))).toBe(false);
   });
 
+  it("re-excludes transient artifacts from the packed directories", async () => {
+    const pkg = await readJson("package.json");
+    const files = pkg.files as string[];
+
+    // A bare directory entry in `files` is recursive AND overrides .gitignore
+    // — npm documents that files named by this field "cannot be excluded
+    // through .npmignore or .gitignore", and a root .npmignore was verified not
+    // to help under bun. Without these negations, a .env, a *.local scratch
+    // file, or an activation marker coming to rest inside skills/, agents/,
+    // commands/ or lib/ ships verbatim to every consumer. Those four
+    // directories are exactly where the rest of the port lands content, so the
+    // exclusions must be asserted rather than assumed.
+    //
+    // The trailing-glob form matters: "!**/.stride-opencode-lite/**" does NOT
+    // match under bun, while the bare "!**/.stride-opencode-lite" does.
+    for (const pattern of [
+      "!**/.env",
+      "!**/.env.*",
+      "!**/*.local",
+      "!**/.stride",
+      "!**/.stride_auth.md",
+      "!**/.stride-opencode-lite",
+      "!**/.exploratory",
+      "!**/.stride-env-cache",
+      "!**/.stride-changed-files.json",
+      "!**/.stride-diff-upload-state",
+    ]) {
+      expect(files).toContain(pattern);
+    }
+  });
+
   it("declares the plugin API as a peer dependency with no runtime dependencies", async () => {
     const pkg = await readJson("package.json");
 
