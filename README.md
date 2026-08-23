@@ -7,9 +7,10 @@ It provides the Stride task lifecycle (claiming, completing, and creating tasks
 and goals) as OpenCode skills, agents and commands, driven by a `.stride_lite.md`
 hook file.
 
-> **Status: scaffold.** The repository layout, package manifest and toolchain are
-> in place; the skills, agents, commands and plugin entry point are not yet
-> ported. This README is a stub and will be replaced when the port is complete.
+> **Status: in progress.** The repository layout, toolchain, hook parser,
+> executor and plugin entry point are in place. The skills, agents and commands
+> are not yet ported. This README is a stub and will be replaced when the port
+> is complete.
 
 ## Hook triggers
 

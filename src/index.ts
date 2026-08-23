@@ -21,8 +21,19 @@
 
 import { basename } from "node:path";
 
+import type { Plugin } from "@opencode-ai/plugin";
+
 import { parseStrideLiteFile, type HookName } from "./parser";
 import { executeHookCommands, hookExitCode, type HookResult } from "./hook-exec";
+
+/**
+ * Plugin namespaces whose prefix may be stripped from a skill name.
+ *
+ * An allow-list, not a pattern. Stripping any `prefix:` would mean the blocking
+ * path fired on an unbounded family of names — `evil:<trigger>` would route —
+ * which is precisely the widening the bound claims not to have.
+ */
+export const STRIPPABLE_SKILL_NAMESPACES = ["stride", "stride-opencode-lite"] as const;
 
 /** The config file this plugin reads. */
 export const CONFIG_FILENAME = ".stride_lite.md";
@@ -33,8 +44,9 @@ export const CONFIG_FILENAME = ".stride_lite.md";
  * These are the OpenCode counterpart of stride-lite's `subagent_type`
  * discriminator: same role, same one-value-per-hook shape, different host. The
  * skills themselves are ported by the workflow-skill task; these constants are
- * the contract between that task and this routing, which is why the tests
- * assert their literal values rather than importing them symbolically.
+ * the contract between that task and this routing. A rename is caught by the
+ * documentation tests, which compare the exported values against the trigger
+ * tables — those hold the names literally, so the two must be changed together.
  */
 export const BEFORE_TASK_SKILL = "stride-opencode-lite-task-explorer";
 export const AFTER_TASK_SKILL = "stride-opencode-lite-task-reviewer";
@@ -145,7 +157,14 @@ export function extractSkillName(
 
   if (raw === undefined) return undefined;
 
-  return raw.trim().replace(/^[A-Za-z0-9_-]+:/, "");
+  const trimmed = raw.trim();
+
+  for (const namespace of STRIPPABLE_SKILL_NAMESPACES) {
+    const prefix = `${namespace}:`;
+    if (trimmed.startsWith(prefix)) return trimmed.slice(prefix.length);
+  }
+
+  return trimmed;
 }
 
 /**
@@ -245,18 +264,13 @@ async function runSection(
   });
 }
 
-interface PluginInput {
-  directory?: string;
-  worktree?: string;
-}
-
 /**
  * The OpenCode plugin.
  *
  * `directory` is preferred over `worktree` so the config is read from the
  * project the session is actually working in.
  */
-export const StrideOpenCodeLitePlugin = async (input: PluginInput) => {
+export const StrideOpenCodeLitePlugin: Plugin = async (input) => {
   const projectDir = input?.directory ?? input?.worktree ?? process.cwd();
 
   return {

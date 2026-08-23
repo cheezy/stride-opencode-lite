@@ -44,7 +44,7 @@ const writeEvent = (tool: string, filePath: string, content: string) => ({
 });
 
 const loadPlugin = async (directory: string) =>
-  (await StrideOpenCodeLitePlugin({ directory })) as {
+  (await StrideOpenCodeLitePlugin({ directory } as never)) as unknown as {
     "tool.execute.before": (i: unknown, o?: unknown) => Promise<void>;
     "tool.execute.after": (i: unknown, o?: unknown) => Promise<void>;
   };
@@ -111,10 +111,19 @@ describe("routeBefore", () => {
     expect(routeBefore(e.input, e.output)).toMatchObject({ hook: "after_task" });
   });
 
+  // Spelled out as literals on purpose. Iterating BLOCKING_TRIGGER_TOOLS would
+  // be self-fulfilling: narrowing the constant would narrow the loop with it,
+  // and the dormant-hook regression this guards would pass unnoticed.
+  const EXPECTED_ACTIVATION_TOOLS = ["skill", "activate_skill", "loadSkill", "load_skill"];
+
+  it("matches exactly the four documented skill-activation spellings", () => {
+    expect([...(BLOCKING_TRIGGER_TOOLS as readonly string[])].sort()).toEqual(
+      [...EXPECTED_ACTIVATION_TOOLS].sort(),
+    );
+  });
+
   it("routes on every skill-activation tool spelling, not just one", () => {
-    // Matching only `skill` would leave the hook dormant on a host emitting
-    // another spelling — the failure this wiring most needs to avoid.
-    for (const tool of BLOCKING_TRIGGER_TOOLS) {
+    for (const tool of EXPECTED_ACTIVATION_TOOLS) {
       expect(routeBefore({ tool }, { args: { name: BEFORE_TASK_SKILL } })).toMatchObject({
         hook: "before_task",
       });
@@ -122,7 +131,7 @@ describe("routeBefore", () => {
   });
 
   it("still requires an exact skill-name match on every spelling", () => {
-    for (const tool of BLOCKING_TRIGGER_TOOLS) {
+    for (const tool of EXPECTED_ACTIVATION_TOOLS) {
       expect(routeBefore({ tool }, { args: { name: "something-else" } })).toBeNull();
     }
   });
@@ -143,9 +152,37 @@ describe("routeBefore", () => {
   });
 
   it("routes on the top-level tool shape as well as the nested one", () => {
+    // Both shapes must route end to end, not merely be extractable. Removing
+    // the nested probe must fail a ROUTING test, not only a unit test.
     expect(
       routeBefore({ tool: "skill" }, { args: { name: BEFORE_TASK_SKILL } }),
     ).toMatchObject({ hook: "before_task" });
+
+    expect(
+      routeBefore({ input: { tool: "skill" } }, { args: { name: BEFORE_TASK_SKILL } }),
+    ).toMatchObject({ hook: "before_task" });
+  });
+
+  it("routes a nested-shape goal write end to end", () => {
+    expect(
+      // The observed nesting puts the argument fields directly under `input`,
+      // not under `input.args`.
+      routeAfter({
+        input: { tool: "write", filePath: `/p/${GOAL_FILENAME}`, content: COMPLETION_HEADING },
+      }),
+    ).toMatchObject({ hook: "after_goal" });
+  });
+
+  it("rejects a foreign plugin namespace on a trigger name", () => {
+    // Only the documented namespaces are stripped. Stripping any `prefix:`
+    // would open the blocking path to an unbounded family of names.
+    for (const name of [
+      `evil:${BEFORE_TASK_SKILL}`,
+      `x9:${BEFORE_TASK_SKILL}`,
+      `not-stride:${BEFORE_TASK_SKILL}`,
+    ]) {
+      expect(routeBefore({ tool: "skill" }, { args: { name } })).toBeNull();
+    }
   });
 });
 
@@ -266,9 +303,14 @@ describe("routeAfter", () => {
 });
 
 describe("plugin handlers", () => {
-  it("exports both handlers", async () => {
+  it("exports exactly the two expected hook keys, spelled correctly", async () => {
+    // The SDK's Plugin type does NOT reject a mistyped hook key (verified: a
+    // "tool.execute.befor" typo still compiles), so the spelling is pinned
+    // here instead. A typo would otherwise produce a plugin that loads
+    // cleanly and silently never fires.
     const hooks = await loadPlugin(await scratchDir());
 
+    expect(Object.keys(hooks).sort()).toEqual(["tool.execute.after", "tool.execute.before"]);
     expect(typeof hooks["tool.execute.before"]).toBe("function");
     expect(typeof hooks["tool.execute.after"]).toBe("function");
   });
@@ -414,19 +456,41 @@ describe("no API, cache or credential surface", () => {
     "fetch(",
   ];
 
-  it("the entry point contains none of the forbidden tokens", async () => {
-    const source = await Bun.file(new URL("./index.ts", import.meta.url).pathname).text();
+  // Criterion 7 says "anywhere in the plugin", so every shipped module is
+  // scanned, not just the entry point.
+  const pluginModules = ["index.ts", "parser.ts", "hook-exec.ts"];
 
-    for (const token of forbidden) {
-      expect(source).not.toContain(token);
+  for (const moduleName of pluginModules) {
+    it(`${moduleName} contains none of the forbidden tokens`, async () => {
+      const source = await Bun.file(new URL(`./${moduleName}`, import.meta.url).pathname).text();
+
+      for (const token of forbidden) {
+        expect(source).not.toContain(token);
+      }
+    });
+  }
+
+  it("no plugin module reaches for a module dynamically", async () => {
+    // A static-import allow-list is evaded by a dynamic import, so the dynamic
+    // forms are refused outright.
+    for (const moduleName of pluginModules) {
+      const source = await Bun.file(new URL(`./${moduleName}`, import.meta.url).pathname).text();
+
+      expect(source).not.toMatch(/\bimport\s*\(/);
+      expect(source).not.toMatch(/\brequire\s*\(/);
     }
   });
 
-  it("the entry point imports only the four permitted modules", async () => {
+  it("the entry point imports only the permitted modules", async () => {
     const source = await Bun.file(new URL("./index.ts", import.meta.url).pathname).text();
     const imports = [...source.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
 
-    expect([...new Set(imports)].sort()).toEqual(["./hook-exec", "./parser", "node:path"]);
+    expect([...new Set(imports)].sort()).toEqual([
+      "./hook-exec",
+      "./parser",
+      "@opencode-ai/plugin",
+      "node:path",
+    ]);
   });
 });
 

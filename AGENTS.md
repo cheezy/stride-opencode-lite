@@ -78,11 +78,16 @@ One false positive remains and is accepted: an edit that *removes* the heading
 still carries that text in its arguments, so it fires. The section cannot block,
 so the cost is one extra advisory run rather than an aborted call.
 
-**Skill names are normalised before comparison** — trimmed, and stripped of an
-optional `<plugin>:` prefix, because OpenCode may namespace a skill by its owning
+**Skill names are normalised before comparison** — trimmed, and stripped of a
+namespace prefix drawn from a literal allow-list (`stride:`,
+`stride-opencode-lite:`), because OpenCode may namespace a skill by its owning
 plugin. Comparing the raw value would leave both blocking hooks dormant on such a
-host. Normalising the prefix does not widen the bound: what remains is still
-whole-string equality against a fixed name.
+host.
+
+The allow-list is what preserves the bound. Stripping an arbitrary `prefix:`
+would let the blocking path fire on an unbounded family of names — `evil:<trigger>`
+would route — so the bound rests on the allow-list *and* the equality, not on the
+equality alone. A near-miss test pins that foreign namespaces route to nothing.
 
 ### Known gaps
 
@@ -91,13 +96,28 @@ whole-string equality against a fixed name.
   skill instead, the two sections become indistinguishable and this contract
   must be revisited. No session-ordinal fallback is implemented: a stated
   limitation is better than a fabricated trigger. The constants are exported as
-  `BEFORE_TASK_SKILL` and `AFTER_TASK_SKILL`, and the tests assert their literal
-  values, so a rename breaks a test rather than silently breaking routing.
+  `BEFORE_TASK_SKILL` and `AFTER_TASK_SKILL`, and the documentation tests compare
+  them against the trigger tables — which hold the names literally — so a rename
+  breaks a test rather than silently breaking routing.
 - **Hook environment variables are not supplied.** stride-lite's bash script
   derives `HOOK_NAME`, `TASK_FILE`, `TASK_TITLE` and similar and exports them
   for the user's commands. The executor here takes no `env` option, so those
   variables are absent. Commands that reference them see empty values rather
   than failing.
+- **The two manual tests are owed.** The task asks for exploration against a
+  real OpenCode session: whether each section fires at the moment the workflow
+  says it does, and whether ordinary unrelated tool use trips a hook. Neither was
+  performed, because no live OpenCode session was available. The near-miss suite
+  is a genuine automated stand-in for the second — it pins that reads, bash
+  writes, wrong basenames, wrong skill names, foreign namespaces and
+  wrong-phase events all route to nothing — but **nothing stands in for the
+  first**, which needs a real session to confirm the chosen triggers actually
+  fire when the workflow reaches those points. That is the check most likely to
+  invalidate the trigger design, and it remains outstanding.
+- **The advisory handler's `catch` is unreachable today** and is deliberately
+  not covered by a test rather than covered by a fabricated one. It is kept as
+  defence for the never-blocks contract should the parser or executor ever gain
+  a throwing path.
 - **The timeout is per command, not per section.** stride-lite's 60s budget
   covers a whole hook invocation; here each command gets its own 60s.
 
