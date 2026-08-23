@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  MAX_TAIL_BYTES,
   TAIL_LINES,
   TIMEOUT_EXIT_CODE,
   executeHookCommands,
@@ -80,6 +81,20 @@ describe("tailLines", () => {
     expect(TAIL_LINES).toBe(50);
     const text = Array.from({ length: 80 }, (_, i) => `l${i}`).join("\n");
     expect(tailLines(text).split("\n")).toHaveLength(50);
+  });
+
+  it("bounds a single line with no newlines by bytes", () => {
+    // A line bound alone is not a bound: newline-free output is one "line"
+    // however many bytes it carries, so the byte ceiling is what binds here.
+    const oneHugeLine = "x".repeat(MAX_TAIL_BYTES * 3);
+
+    expect(tailLines(oneHugeLine).length).toBe(MAX_TAIL_BYTES);
+  });
+
+  it("keeps the trailing bytes of an over-long line, not the leading ones", () => {
+    const line = "A".repeat(MAX_TAIL_BYTES) + "TAIL_MARKER";
+
+    expect(tailLines(line).endsWith("TAIL_MARKER")).toBe(true);
   });
 });
 
@@ -192,6 +207,22 @@ describe("executeHookCommands", () => {
     expect(lines).toHaveLength(TAIL_LINES);
     expect(lines.at(-1)).toBe("line 500");
     expect(stdout).not.toContain("line 1\n");
+  });
+
+  it("bounds newline-free output, which the line bound alone cannot", async () => {
+    // ~300KB in a single line with no newline anywhere. The line-count trim can
+    // never fire on this, so it exercises the byte ceiling — both the trim that
+    // keeps the in-process buffer bounded while the stream is still arriving,
+    // and the cap on what reaches the result object.
+    const result = await executeHookCommands("before_task", [
+      "head -c 300000 /dev/zero | tr '\\0' 'x'; exit 1",
+    ]);
+
+    const stdout = (result as { stdout: string }).stdout;
+
+    expect(stdout).not.toContain("\n");
+    expect(stdout.length).toBeLessThanOrEqual(MAX_TAIL_BYTES);
+    expect(stdout.length).toBeGreaterThan(0);
   });
 
   it("streams output to onOutput as it arrives", async () => {
@@ -310,26 +341,64 @@ describe("timeout", () => {
     const dir = await scratchDir();
     const pidFile = join(dir, "grandchild.pid");
 
-    // The shell spawns a background grandchild and then blocks. Killing only
-    // the direct child would leave the grandchild running.
+    // The grandchild deliberately OUTLIVES its parent (120s vs 1s). If the
+    // group signal did nothing, the parent would exit on its own after ~1s and
+    // the grandchild would still be alive two minutes later — so this cannot
+    // pass by simply waiting for both sleeps to end, which is how an earlier
+    // version of this test could have gone green against a no-op kill.
+    const startedAt = Date.now();
     await executeHookCommands(
       "before_task",
-      [`sh -c 'sleep 30 & echo $! > ${pidFile}; sleep 30'`],
+      [`sh -c 'sleep 120 & echo $! > ${pidFile}; sleep 60'`],
       { cwd: dir, timeoutMs: 300, killGraceMs: 50 },
     );
+
+    // A wall-clock ceiling is the second discriminator: waiting out the sleeps
+    // would blow straight past it.
+    expect(Date.now() - startedAt).toBeLessThan(10_000);
 
     const pid = Number((await Bun.file(pidFile).text()).trim());
     expect(Number.isFinite(pid)).toBe(true);
 
     // Poll rather than assert immediately: termination is asynchronous.
     let alive = true;
-    for (let attempt = 0; attempt < 50 && alive; attempt++) {
+    for (let attempt = 0; attempt < 100 && alive; attempt++) {
       try {
         process.kill(pid, 0);
         await Bun.sleep(20);
       } catch {
         alive = false;
       }
+    }
+
+    expect(alive).toBe(false);
+  });
+
+  it("returns only after termination has completed, not while it is pending", async () => {
+    const dir = await scratchDir();
+    const pidFile = join(dir, "stubborn.pid");
+
+    // The grandchild IGNORES SIGTERM while its parent does not. So SIGTERM
+    // ends the direct child — resolving proc.exited and letting the function
+    // return — while the grandchild survives until the escalated SIGKILL.
+    // That is precisely the window a fire-and-forget escalation would leave
+    // open, so this asserts immediately on return rather than polling: if the
+    // escalation were not awaited, the grandchild would still be alive here.
+    await executeHookCommands(
+      "before_task",
+      [`sh -c 'sh -c "trap \\"\\" TERM; sleep 120" & echo $! > ${pidFile}; sleep 60'`],
+      { cwd: dir, timeoutMs: 200, killGraceMs: 100 },
+    );
+
+    const pid = Number((await Bun.file(pidFile).text()).trim());
+    expect(Number.isFinite(pid)).toBe(true);
+
+    let alive: boolean;
+    try {
+      process.kill(pid, 0);
+      alive = true;
+    } catch {
+      alive = false;
     }
 
     expect(alive).toBe(false);

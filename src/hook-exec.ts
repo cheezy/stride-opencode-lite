@@ -24,6 +24,18 @@ import { isBlockingHook } from "./parser";
 /** Lines of stdout/stderr retained on the failure path (bash uses `tail -50`). */
 export const TAIL_LINES = 50;
 
+/**
+ * Byte ceiling on retained output, enforced alongside the line bound.
+ *
+ * A line bound alone is not a bound: output containing no newline at all — a
+ * minified blob, `base64 -w0`, a single huge JSON line — is one "line" however
+ * many bytes it carries, so a line-only trim never fires and the buffer grows
+ * for the life of the command. The bash implementation spills to a temp file
+ * and so stays bounded in memory regardless; this keeps the port from being
+ * worse than the reference it mirrors.
+ */
+export const MAX_TAIL_BYTES = 64 * 1024;
+
 /** Exit code reported for a command terminated by its timeout. */
 export const TIMEOUT_EXIT_CODE = 124;
 
@@ -78,12 +90,20 @@ export interface ExecuteHookOptions {
  * trailing blank line would count against the budget and the captured text
  * would differ from bash's for identical output.
  */
-export function tailLines(text: string, maxLines: number = TAIL_LINES): string {
+export function tailLines(
+  text: string,
+  maxLines: number = TAIL_LINES,
+  maxBytes: number = MAX_TAIL_BYTES,
+): string {
   const withoutTrailingNewlines = text.replace(/\n+$/, "");
   if (withoutTrailingNewlines === "") return "";
 
   const lines = withoutTrailingNewlines.split("\n");
-  return lines.slice(-maxLines).join("\n");
+  const tail = lines.slice(-maxLines).join("\n");
+
+  // The byte ceiling binds even when the line bound cannot — a single line
+  // longer than the ceiling is still truncated to its trailing bytes.
+  return tail.length > maxBytes ? tail.slice(-maxBytes) : tail;
 }
 
 /**
@@ -93,7 +113,11 @@ export function tailLines(text: string, maxLines: number = TAIL_LINES): string {
  * a runaway command cannot grow the result object without limit however long it
  * runs.
  */
-function createTailSink(maxLines: number, onOutput?: (chunk: string) => void) {
+function createTailSink(
+  maxLines: number,
+  onOutput?: (chunk: string) => void,
+  maxBytes: number = MAX_TAIL_BYTES,
+) {
   let buffer = "";
 
   return {
@@ -107,9 +131,17 @@ function createTailSink(maxLines: number, onOutput?: (chunk: string) => void) {
       if (lines.length > maxLines + 1) {
         buffer = lines.slice(-(maxLines + 1)).join("\n");
       }
+
+      // The byte ceiling is what actually bounds newline-free output, where
+      // the line trim above can never fire. Keep slack so a stream arriving in
+      // small chunks does not re-slice on every write.
+      const byteCeiling = maxBytes * 2;
+      if (buffer.length > byteCeiling) {
+        buffer = buffer.slice(-byteCeiling);
+      }
     },
     value(): string {
-      return tailLines(buffer, maxLines);
+      return tailLines(buffer, maxLines, maxBytes);
     },
   };
 }
@@ -135,10 +167,28 @@ export async function killProcessGroup(
 
   await Bun.sleep(graceMs);
 
+  // Probe the group before escalating, rather than sending SIGKILL blind.
+  //
+  // The escalation cannot simply be skipped when the direct child has exited:
+  // the case it exists for is precisely a descendant that ignored SIGTERM and
+  // outlived its parent, which is the orphan this whole mechanism prevents. So
+  // the condition is whether any group member is still alive, not whether the
+  // child is.
+  //
+  // Signal 0 checks for existence without delivering anything, which also
+  // narrows the window in which a blind SIGKILL could land on a process group
+  // that inherited a recycled pid.
+  try {
+    process.kill(-pid, 0);
+  } catch {
+    // The whole group is gone — the grace period did its job.
+    return;
+  }
+
   try {
     process.kill(-pid, "SIGKILL");
   } catch {
-    // Exited during the grace period, which is the intended outcome.
+    // Raced with the group exiting between the probe and the signal.
   }
 }
 
@@ -210,10 +260,11 @@ export async function executeHookCommands(
       });
 
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let termination: Promise<void> | undefined;
       if (Number.isFinite(timeoutMs)) {
         timer = setTimeout(() => {
           timedOut = true;
-          void killProcessGroup(proc.pid, killGraceMs);
+          termination = killProcessGroup(proc.pid, killGraceMs);
         }, timeoutMs);
       }
 
@@ -226,6 +277,10 @@ export async function executeHookCommands(
         exitCode = status;
       } finally {
         if (timer !== undefined) clearTimeout(timer);
+        // Await the escalation rather than leaving it in flight: returning
+        // while a SIGKILL is still pending would be the abandonment this
+        // whole mechanism exists to prevent.
+        if (termination !== undefined) await termination;
       }
     } catch (error) {
       // The shell could not be started at all (an unusable cwd, for instance).
