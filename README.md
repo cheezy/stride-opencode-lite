@@ -18,8 +18,8 @@ per `## section` heading. Each section fires at this point:
 
 | Section | OpenCode event | Trigger | Blocking |
 |---|---|---|---|
-| `before_task` | `tool.execute.before` | tool `skill`, skill name exactly `stride-opencode-lite-task-explorer` | yes |
-| `after_task` | `tool.execute.before` | tool `skill`, skill name exactly `stride-opencode-lite-task-reviewer` | yes |
+| `before_task` | `tool.execute.before` | a skill-activation tool, skill name exactly `stride-opencode-lite-task-explorer` | yes |
+| `after_task` | `tool.execute.before` | a skill-activation tool, skill name exactly `stride-opencode-lite-task-reviewer` | yes |
 | `after_goal` | `tool.execute.after` | tool `edit` or `write`, basename exactly `goal.md`, payload contains `## Completion Summary` | no |
 
 A blocking section aborts the tool call that triggered it when a command fails.

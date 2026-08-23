@@ -5,8 +5,8 @@
  *
  * | Section      | Event               | Trigger                                                        | Blocking |
  * |--------------|---------------------|----------------------------------------------------------------|----------|
- * | before_task  | tool.execute.before | tool `skill`, skill name `stride-opencode-lite-task-explorer`    | yes      |
- * | after_task   | tool.execute.before | tool `skill`, skill name `stride-opencode-lite-task-reviewer`    | yes      |
+ * | before_task  | tool.execute.before | skill-activation tool, skill `stride-opencode-lite-task-explorer` | yes      |
+ * | after_task   | tool.execute.before | skill-activation tool, skill `stride-opencode-lite-task-reviewer` | yes      |
  * | after_goal   | tool.execute.after  | tool `edit`/`write`, basename `goal.md`, body has the heading    | no       |
  *
  * The two blocking sections live in `tool.execute.before` because that is the
@@ -39,8 +39,22 @@ export const CONFIG_FILENAME = ".stride_lite.md";
 export const BEFORE_TASK_SKILL = "stride-opencode-lite-task-explorer";
 export const AFTER_TASK_SKILL = "stride-opencode-lite-task-reviewer";
 
-/** The only tool whose activation can mark a blocking lifecycle point. */
-export const BLOCKING_TRIGGER_TOOLS = ["skill"] as const;
+/**
+ * Tools whose activation can mark a blocking lifecycle point.
+ *
+ * Taken from the skill-activation tool names the full OpenCode plugin
+ * observed, not narrowed to the one name seen most often: matching too few
+ * would leave the hook DORMANT on a host that emits another spelling, which is
+ * the failure mode this wiring most needs to avoid. Widening this list costs
+ * almost nothing, because the skill NAME below is the real gate and is matched
+ * by exact equality — a tool name alone can never fire a hook.
+ */
+export const BLOCKING_TRIGGER_TOOLS = [
+  "skill",
+  "activate_skill",
+  "loadSkill",
+  "load_skill",
+] as const;
 
 /** Tools whose file mutation can mark goal completion. */
 export const GOAL_WRITE_TOOLS = ["edit", "write"] as const;
@@ -152,7 +166,7 @@ export function extractFilePath(
  */
 export function routeBefore(input: unknown, output?: unknown): RoutingDecision | null {
   const tool = extractToolName(input);
-  if (!tool || !BLOCKING_TRIGGER_TOOLS.includes(tool as "skill")) return null;
+  if (!tool || !(BLOCKING_TRIGGER_TOOLS as readonly string[]).includes(tool)) return null;
 
   const skill = extractSkillName(extractToolArgs(input, output));
   if (skill === BEFORE_TASK_SKILL) {
@@ -176,7 +190,7 @@ export function routeBefore(input: unknown, output?: unknown): RoutingDecision |
  */
 export function routeAfter(input: unknown, output?: unknown): RoutingDecision | null {
   const tool = extractToolName(input);
-  if (!tool || !GOAL_WRITE_TOOLS.includes(tool as "edit" | "write")) return null;
+  if (!tool || !(GOAL_WRITE_TOOLS as readonly string[]).includes(tool)) return null;
 
   const args = extractToolArgs(input, output);
   const filePath = extractFilePath(args);

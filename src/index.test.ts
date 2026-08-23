@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   AFTER_TASK_SKILL,
   BEFORE_TASK_SKILL,
+  BLOCKING_TRIGGER_TOOLS,
   COMPLETION_HEADING,
   CONFIG_FILENAME,
   GOAL_FILENAME,
@@ -108,6 +109,22 @@ describe("routeBefore", () => {
   it("routes the reviewer skill to after_task", () => {
     const e = skillEvent(AFTER_TASK_SKILL);
     expect(routeBefore(e.input, e.output)).toMatchObject({ hook: "after_task" });
+  });
+
+  it("routes on every skill-activation tool spelling, not just one", () => {
+    // Matching only `skill` would leave the hook dormant on a host emitting
+    // another spelling — the failure this wiring most needs to avoid.
+    for (const tool of BLOCKING_TRIGGER_TOOLS) {
+      expect(routeBefore({ tool }, { args: { name: BEFORE_TASK_SKILL } })).toMatchObject({
+        hook: "before_task",
+      });
+    }
+  });
+
+  it("still requires an exact skill-name match on every spelling", () => {
+    for (const tool of BLOCKING_TRIGGER_TOOLS) {
+      expect(routeBefore({ tool }, { args: { name: "something-else" } })).toBeNull();
+    }
   });
 
   it("routes on the top-level tool shape as well as the nested one", () => {
@@ -377,8 +394,8 @@ describe("documented trigger tables agree with the implementation", () => {
   const repoRoot = new URL("..", import.meta.url).pathname;
 
   const canonicalRows = [
-    `| \`before_task\` | \`tool.execute.before\` | tool \`skill\`, skill name exactly \`${BEFORE_TASK_SKILL}\` | yes |`,
-    `| \`after_task\` | \`tool.execute.before\` | tool \`skill\`, skill name exactly \`${AFTER_TASK_SKILL}\` | yes |`,
+    `| \`before_task\` | \`tool.execute.before\` | a skill-activation tool, skill name exactly \`${BEFORE_TASK_SKILL}\` | yes |`,
+    `| \`after_task\` | \`tool.execute.before\` | a skill-activation tool, skill name exactly \`${AFTER_TASK_SKILL}\` | yes |`,
     `| \`after_goal\` | \`tool.execute.after\` | tool \`edit\` or \`write\`, basename exactly \`${GOAL_FILENAME}\`, payload contains \`${COMPLETION_HEADING}\` | no |`,
   ];
 

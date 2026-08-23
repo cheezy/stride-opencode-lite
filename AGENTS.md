@@ -10,8 +10,8 @@
 
 | Section | OpenCode event | Trigger | Blocking |
 |---|---|---|---|
-| `before_task` | `tool.execute.before` | tool `skill`, skill name exactly `stride-opencode-lite-task-explorer` | yes |
-| `after_task` | `tool.execute.before` | tool `skill`, skill name exactly `stride-opencode-lite-task-reviewer` | yes |
+| `before_task` | `tool.execute.before` | a skill-activation tool, skill name exactly `stride-opencode-lite-task-explorer` | yes |
+| `after_task` | `tool.execute.before` | a skill-activation tool, skill name exactly `stride-opencode-lite-task-reviewer` | yes |
 | `after_goal` | `tool.execute.after` | tool `edit` or `write`, basename exactly `goal.md`, payload contains `## Completion Summary` | no |
 
 ## Why these triggers
@@ -33,8 +33,9 @@ not by convention.
 
 ### The chosen trigger
 
-The native **skill-activation tool**, matched on the activated skill's name by
-exact string equality. This is a structural 1:1 with stride-lite's
+The native **skill-activation tool** — matched against every spelling the full
+OpenCode plugin records (`skill`, `activate_skill`, `loadSkill`, `load_skill`) —
+with the activated skill's name compared by exact string equality. This is a structural 1:1 with stride-lite's
 `subagent_type`: the same discriminator in the same position, naming the same
 two roles, on a different host.
 
@@ -46,14 +47,15 @@ two roles, on a different host.
 | Matching a `bash` command pattern | An unbounded false-positive class on a **blocking** hook: any shell command resembling the pattern would abort a user's tool call. |
 | A write to a task file | Conflates file mutation with a lifecycle point, and cannot distinguish `before_task` from `after_task`. |
 | An explicit sentinel file the agent writes | The throw would abort the sentinel write, not the dispatch it stands for — blocking would be nominal rather than real. |
-| Widening the tool allowlist beyond `skill` | Every added tool widens the blocking path's false-positive surface for no gain. |
+| Matching only the single tool name `skill` | Risks a **dormant hook**: the full OpenCode plugin records four skill-activation spellings, and matching one would leave the hook silently inert on a host emitting another. Widening costs almost nothing because the skill *name* is the real gate. |
 | Sniffing the prompt text | Pattern matching on free text, on the blocking path. Same objection as bash matching, with a larger surface. |
 
 ### False-positive bound
 
 **Blocking sections.** The path is exact string equality on two fields — the
-tool name must be `skill`, and the skill name must equal one of the two
-constants. No pattern, prefix, or substring match reaches it. The only way to
+tool name must be one of the four skill-activation spellings, and the skill name
+must equal one of the two constants. The tool name alone can never fire a hook,
+which is why widening that list does not widen the bound. No pattern, prefix, or substring match reaches it. The only way to
 trigger one without being in the workflow is to activate one of those two named
 skills directly, which is a deliberate act. Nothing else in a session can reach
 the throw.
