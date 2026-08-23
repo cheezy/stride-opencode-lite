@@ -127,3 +127,47 @@ It performs no API detection, keeps no environment cache, uploads no changed
 files, and reads no credential or auth file. It reads exactly one file — the
 project's `.stride_lite.md` — and runs the commands the user wrote in it. A test
 scans the entry point's source for the forbidden tokens and pins its import list.
+
+## The `lib/` convention
+
+`lib/` holds one markdown **spec** per pure helper — not executable code. Each
+spec is the normative definition of a helper that a runtime then implements.
+
+Four helpers are ported from stride-lite, and their specs are the contract:
+
+| Helper | Purpose |
+|---|---|
+| [`parse_args`](lib/parse_args.md) | Extract the prompt and the `--requirements-dir` / `--output-dir` flags from argv |
+| [`load_requirements_dir`](lib/load_requirements_dir.md) | Concatenate a requirements directory's text files, with headers |
+| [`slugify`](lib/slugify.md) | Normalise a free-text prompt into a filesystem-safe slug |
+| [`resolve_output_path`](lib/resolve_output_path.md) | Resolve a non-existent output path, suffixing `-2`, `-3`, … on collision |
+
+### Transliterate without renaming
+
+**The reference implementations in these specs are normative.** A runtime that
+needs an executable helper transliterates the bash from the spec **without
+renaming functions or changing exit-code semantics**. `parse_args`,
+`load_requirements_dir`, `slugify` and `resolve_output_path` keep those names,
+their stdout contracts, and their exit codes wherever they are implemented — a
+port that renames them is a port that has broken the contract.
+
+The defaults are part of that contract too: `docs/requirements` for the
+requirements directory and `docs/implementation/PENDING` for the output base.
+
+### Adding a new helper to `lib/`
+
+1. Follow the format: **Contract table**, **Spec/Rules**, a bash **reference
+   implementation**, **Examples**, and **Edge cases**.
+2. Document inputs as a table, and state the stdout contract — including
+   trailing-newline behaviour — alongside an exit-codes table.
+3. Keep helpers **pure**: no global state, no network, no directory creation.
+4. Write errors to stderr, prefixed `<helper_name>: <reason>`.
+5. Update the repository layout notes in this file.
+
+### What was deliberately not ported
+
+stride-lite's `lib/` also contains `select_workflow_branch.md`. It is **not**
+part of this set. It is consumed by the workflow orchestrator skill, and in
+stride-lite's sibling ports it arrived with that skill rather than with the
+initial four helpers — so it belongs to the workflow-port task, not here. It is
+not host-specific; it is simply sequenced later.
