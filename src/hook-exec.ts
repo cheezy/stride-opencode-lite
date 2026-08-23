@@ -113,7 +113,7 @@ export function tailLines(
  * a runaway command cannot grow the result object without limit however long it
  * runs.
  */
-function createTailSink(
+export function createTailSink(
   maxLines: number,
   onOutput?: (chunk: string) => void,
   maxBytes: number = MAX_TAIL_BYTES,
@@ -142,6 +142,17 @@ function createTailSink(
     },
     value(): string {
       return tailLines(buffer, maxLines, maxBytes);
+    },
+    /**
+     * Bytes currently retained.
+     *
+     * Exposed so the mid-stream bound can be asserted directly: `value()` caps
+     * the returned text regardless, so it cannot distinguish a buffer that was
+     * trimmed while the stream arrived from one that grew without limit and was
+     * only cut at the end.
+     */
+    size(): number {
+      return buffer.length;
     },
   };
 }

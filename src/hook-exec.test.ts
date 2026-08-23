@@ -10,6 +10,7 @@ import {
   TIMEOUT_EXIT_CODE,
   executeHookCommands,
   hookExitCode,
+  createTailSink,
   killProcessGroup,
   tailLines,
 } from "./hook-exec";
@@ -96,6 +97,37 @@ describe("tailLines", () => {
     const line = "A".repeat(MAX_TAIL_BYTES) + "TAIL_MARKER";
 
     expect(tailLines(line).endsWith("TAIL_MARKER")).toBe(true);
+  });
+});
+
+describe("createTailSink", () => {
+  it("bounds retained bytes WHILE the stream arrives, not only at capture", () => {
+    // value() caps its return regardless, so it cannot distinguish a buffer
+    // trimmed mid-stream from one that grew to gigabytes and was cut at the
+    // end. Asserting size() is what pins the memory bound — the security
+    // property here is that the hook process does not grow with the stream.
+    const sink = createTailSink(TAIL_LINES);
+
+    const chunk = "x".repeat(8 * 1024); // no newlines: the line trim can never fire
+    for (let i = 0; i < 400; i++) {
+      sink.write(chunk);
+      expect(sink.size()).toBeLessThanOrEqual(MAX_TAIL_BYTES * 2 + chunk.length);
+    }
+
+    // 400 * 8KB = 3.2MB written; retained must stay near the ceiling.
+    expect(sink.size()).toBeLessThanOrEqual(MAX_TAIL_BYTES * 2 + chunk.length);
+    expect(sink.value().length).toBe(MAX_TAIL_BYTES);
+  });
+
+  it("bounds retained bytes for line-shaped output too", () => {
+    const sink = createTailSink(TAIL_LINES);
+
+    for (let i = 0; i < 5000; i++) {
+      sink.write(`line ${i}\n`);
+    }
+
+    expect(sink.size()).toBeLessThanOrEqual(MAX_TAIL_BYTES * 2);
+    expect(sink.value().split("\n")).toHaveLength(TAIL_LINES);
   });
 });
 
@@ -379,27 +411,45 @@ describe("timeout", () => {
     const dir = await scratchDir();
     const pidFile = join(dir, "stubborn.pid");
 
-    // The grandchild IGNORES SIGTERM while its parent does not. So SIGTERM
-    // ends the direct child — resolving proc.exited and letting the function
-    // return — while the grandchild survives until the escalated SIGKILL.
-    // That is precisely the window a fire-and-forget escalation would leave
-    // open, so this asserts immediately on return rather than polling: if the
-    // escalation were not awaited, the grandchild would still be alive here.
+    // The grandchild IGNORES SIGTERM while its parent does not, and its streams
+    // are redirected so it cannot hold the inherited pipe open — otherwise
+    // readStream, not the await, would be what gates the return.
+    //
+    // Awaitedness is asserted by TIMING rather than by liveness. With the
+    // escalation awaited, the call cannot return before the budget plus the
+    // full grace period; left in flight, it would return as soon as SIGTERM
+    // ends the direct child, at roughly the budget alone. Liveness cannot
+    // discriminate here: a killed process is briefly a zombie, and signal 0
+    // succeeds against a zombie.
+    const timeoutMs = 150;
+    const killGraceMs = 600;
+
+    const startedAt = Date.now();
     await executeHookCommands(
       "before_task",
-      [`sh -c 'sh -c "trap \\"\\" TERM; sleep 120" & echo $! > ${pidFile}; sleep 60'`],
-      { cwd: dir, timeoutMs: 200, killGraceMs: 100 },
+      [
+        `sh -c 'sh -c "trap \\"\\" TERM; sleep 120" >/dev/null 2>&1 & echo $! > ${pidFile}; sleep 60'`,
+      ],
+      { cwd: dir, timeoutMs, killGraceMs },
     );
+    const elapsed = Date.now() - startedAt;
+
+    // Without the await this lands near `timeoutMs`; with it, past the grace.
+    expect(elapsed).toBeGreaterThanOrEqual(timeoutMs + killGraceMs - 50);
+    expect(elapsed).toBeLessThan(10_000);
 
     const pid = Number((await Bun.file(pidFile).text()).trim());
     expect(Number.isFinite(pid)).toBe(true);
 
-    let alive: boolean;
-    try {
-      process.kill(pid, 0);
-      alive = true;
-    } catch {
-      alive = false;
+    // The orphan is gone too — polled, because reaping is asynchronous.
+    let alive = true;
+    for (let attempt = 0; attempt < 100 && alive; attempt++) {
+      try {
+        process.kill(pid, 0);
+        await Bun.sleep(20);
+      } catch {
+        alive = false;
+      }
     }
 
     expect(alive).toBe(false);

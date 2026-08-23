@@ -120,7 +120,13 @@ export async function parseStrideLiteFile(
  * @returns Cleaned executable commands
  */
 export function buildCommandList(lines: string[]): string[] {
+  // Strip leading whitespace only, matching bash's
+  // `_trimmed="${_cmd#"${_cmd%%[![:space:]]*}"}"`. Trailing whitespace is part
+  // of the command as the user wrote it, and it reaches the result verbatim in
+  // failed_command, commands_completed and commands_remaining -- so trimming
+  // the tail here would make those fields differ from bash's for identical
+  // input. A whitespace-only line still collapses to empty and is dropped.
   return lines
-    .map((line) => line.trim())
+    .map((line) => line.replace(/^\s+/, ""))
     .filter((line) => line.length > 0 && !line.startsWith("#"));
 }

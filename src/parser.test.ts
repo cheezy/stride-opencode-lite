@@ -288,9 +288,13 @@ echo goal complete
 });
 
 describe("buildCommandList", () => {
-  it("trims surrounding whitespace from each command", () => {
+  it("strips leading whitespace but keeps trailing, as bash does", () => {
+    // Bash strips only the leading run, so trailing whitespace stays part of
+    // the command and reaches failed_command / commands_completed verbatim.
+    // Trimming both ends would make those fields differ from bash's for
+    // identical input.
     expect(buildCommandList(["  echo padded  ", "\techo tabbed"])).toEqual([
-      "echo padded",
+      "echo padded  ",
       "echo tabbed",
     ]);
   });
