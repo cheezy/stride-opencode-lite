@@ -118,23 +118,34 @@ export function extractToolArgs(
 }
 
 /**
- * Read the activated skill's name.
+ * Read the activated skill's name, normalised for comparison.
  *
  * The SDK does not document the `skill` tool's argument field, so several
- * spellings are probed. Every one is compared by exact equality later — no
- * pattern matching reaches the blocking path.
+ * spellings are probed. The value is then trimmed and stripped of an optional
+ * `<plugin>:` prefix, because OpenCode may deliver a skill name namespaced by
+ * the plugin that owns it — the full plugin's own gate documents this and
+ * normalises the same way. Without it, a genuine activation would compare
+ * unequal and both blocking hooks would sit silently dormant, which is the
+ * failure this routing most needs to avoid.
+ *
+ * Normalising the prefix does not widen the false-positive bound: what remains
+ * is still whole-string equality against a fixed name, never a prefix or
+ * substring match.
  */
 export function extractSkillName(
   args: Record<string, unknown> | undefined,
 ): string | undefined {
   if (!args) return undefined;
 
-  return (
+  const raw =
     asString(args.name) ??
     asString(args.skill) ??
     asString(args.skillName) ??
-    asString(args.skill_name)
-  );
+    asString(args.skill_name);
+
+  if (raw === undefined) return undefined;
+
+  return raw.trim().replace(/^[A-Za-z0-9_-]+:/, "");
 }
 
 /**
@@ -182,11 +193,18 @@ export function routeBefore(input: unknown, output?: unknown): RoutingDecision |
 /**
  * Decide whether a post-execution event marks goal completion.
  *
- * Mirrors stride-lite, which greps the whole serialized payload for the
- * heading rather than reading one field. That is kept deliberately: the SDK
- * documents no field names for `edit`/`write` args, so a field-specific check
- * would produce silent false negatives — and a missed advisory hook surfaces
- * nowhere at all, while its false positive is merely an extra advisory run.
+ * The heading is searched for across the whole resolved ARGUMENTS record rather
+ * than any single named field, because the SDK documents no field names for
+ * `edit`/`write` args and a field-specific check would give silent false
+ * negatives — a missed advisory hook surfaces nowhere at all.
+ *
+ * It is deliberately NOT searched across the whole event. The after phase's
+ * `output` is `{title, output, metadata}`, so serializing the event would put
+ * the tool's own application output into the searched text — and a heading that
+ * a fetched document, a generated report or a rendered diff merely *contains*
+ * would then decide that a goal had completed. The written text always reaches
+ * the arguments for both trigger tools, so narrowing the search costs no
+ * legitimate match.
  */
 export function routeAfter(input: unknown, output?: unknown): RoutingDecision | null {
   const tool = extractToolName(input);
@@ -198,7 +216,7 @@ export function routeAfter(input: unknown, output?: unknown): RoutingDecision | 
 
   let serialized: string;
   try {
-    serialized = JSON.stringify({ input, output }) ?? "";
+    serialized = JSON.stringify(args) ?? "";
   } catch {
     // A payload that cannot be serialized cannot be searched; treat it as no
     // match rather than guessing.

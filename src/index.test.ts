@@ -127,6 +127,21 @@ describe("routeBefore", () => {
     }
   });
 
+  it("routes a plugin-namespaced skill name", () => {
+    // OpenCode may namespace a skill by its owning plugin. Comparing the raw
+    // value would leave both blocking hooks dormant on such a host — the same
+    // dormancy failure the tool-name list was widened to avoid.
+    for (const name of [
+      `stride:${BEFORE_TASK_SKILL}`,
+      `stride-opencode-lite:${BEFORE_TASK_SKILL}`,
+      `  ${BEFORE_TASK_SKILL}  `,
+    ]) {
+      expect(routeBefore({ tool: "skill" }, { args: { name } })).toMatchObject({
+        hook: "before_task",
+      });
+    }
+  });
+
   it("routes on the top-level tool shape as well as the nested one", () => {
     expect(
       routeBefore({ tool: "skill" }, { args: { name: BEFORE_TASK_SKILL } }),
@@ -190,6 +205,27 @@ describe("near misses — these must route to nothing", () => {
     expect(routeBefore(e.input, e.output)).toBeNull();
   });
 
+  it("10. the heading appearing ONLY in the tool's application output", () => {
+    // The after phase's output is {title, output, metadata} — application
+    // output. A heading a fetched document or a rendered diff merely contains
+    // must not decide that a goal completed.
+    const e = {
+      input: { tool: "write", args: { filePath: `/p/${GOAL_FILENAME}`, content: "# Goal\n" } },
+      output: { title: "w", output: `wrote ${COMPLETION_HEADING}`, metadata: {} },
+    };
+    expect(routeAfter(e.input, e.output)).toBeNull();
+  });
+
+  it("11. a skill name that merely CONTAINS a trigger name", () => {
+    for (const name of [
+      `not-${BEFORE_TASK_SKILL}`,
+      `${BEFORE_TASK_SKILL}-v2`,
+      BEFORE_TASK_SKILL.toUpperCase(),
+    ]) {
+      expect(routeBefore({ tool: "skill" }, { args: { name } })).toBeNull();
+    }
+  });
+
   it("9. a skill activation with no name at all", () => {
     expect(routeBefore({ tool: "skill" }, { args: {} })).toBeNull();
     expect(routeBefore({ tool: "skill" }, {})).toBeNull();
@@ -216,12 +252,16 @@ describe("routeAfter", () => {
     expect(routeAfter(circular, {})).toBeNull();
   });
 
-  it("matches the heading anywhere in the payload, as bash greps the whole input", () => {
-    const e = {
-      input: { tool: "write", args: { filePath: `/p/${GOAL_FILENAME}` } },
-      output: { title: "w", output: `wrote ${COMPLETION_HEADING}`, metadata: {} },
-    };
-    expect(routeAfter(e.input, e.output)).toMatchObject({ hook: "after_goal" });
+  it("matches the heading in any ARGUMENT field, without naming one", () => {
+    // Field-agnostic on purpose: the SDK documents no field names for
+    // edit/write, so pinning one would give silent false negatives.
+    for (const args of [
+      { filePath: `/p/${GOAL_FILENAME}`, content: COMPLETION_HEADING },
+      { filePath: `/p/${GOAL_FILENAME}`, newString: COMPLETION_HEADING },
+      { filePath: `/p/${GOAL_FILENAME}`, new_string: COMPLETION_HEADING },
+    ]) {
+      expect(routeAfter({ tool: "write", args }, {})).toMatchObject({ hook: "after_goal" });
+    }
   });
 });
 

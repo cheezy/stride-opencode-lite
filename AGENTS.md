@@ -60,14 +60,29 @@ trigger one without being in the workflow is to activate one of those two named
 skills directly, which is a deliberate act. Nothing else in a session can reach
 the throw.
 
-**Advisory section.** `after_goal` inherits stride-lite's whole-payload grep,
-and therefore its false positive: an edit that *removes* the completion heading
-still contains the heading text in its payload, so it fires. This is deliberate.
-The SDK documents no field names for the `edit` and `write` tool arguments, so a
-field-specific check would produce silent **false negatives** — and a missed
-advisory hook surfaces nowhere at all, while a spurious one merely runs an
-advisory section twice. Given the choice, the failure that is visible is the
-better one.
+**Advisory section.** `after_goal` searches the resolved **arguments** record
+for the heading, across every field rather than a named one. The field-agnostic
+part is deliberate: the SDK documents no field names for the `edit` and `write`
+arguments, so pinning one would give silent **false negatives**, and a missed
+advisory hook surfaces nowhere at all.
+
+The search deliberately stops at the arguments and does **not** cover the whole
+event. The after phase's `output` is `{title, output, metadata}` — the tool's own
+application output — so searching the event would let a heading that a fetched
+document, a generated report or a rendered diff merely *contains* decide that a
+goal had completed. That would key the trigger on a string untrusted content can
+cause to appear. Both trigger tools carry the written text in their arguments,
+so narrowing the search costs no legitimate match.
+
+One false positive remains and is accepted: an edit that *removes* the heading
+still carries that text in its arguments, so it fires. The section cannot block,
+so the cost is one extra advisory run rather than an aborted call.
+
+**Skill names are normalised before comparison** — trimmed, and stripped of an
+optional `<plugin>:` prefix, because OpenCode may namespace a skill by its owning
+plugin. Comparing the raw value would leave both blocking hooks dormant on such a
+host. Normalising the prefix does not widen the bound: what remains is still
+whole-string equality against a fixed name.
 
 ### Known gaps
 
