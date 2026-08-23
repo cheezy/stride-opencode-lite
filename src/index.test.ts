@@ -280,13 +280,10 @@ describe("routeAfter", () => {
   it("treats an unserializable payload as no match rather than guessing", () => {
     // A circular payload cannot be searched for the heading. Routing must
     // decline it rather than assume either answer.
-    const circular: Record<string, unknown> = {
-      tool: "write",
-      args: { filePath: `/p/${GOAL_FILENAME}` },
-    };
-    circular.self = circular;
+    const circularArgs: Record<string, unknown> = { filePath: `/p/${GOAL_FILENAME}` };
+    circularArgs.self = circularArgs;
 
-    expect(routeAfter(circular, {})).toBeNull();
+    expect(routeAfter({ tool: "write", args: circularArgs }, {})).toBeNull();
   });
 
   it("matches the heading in any ARGUMENT field, without naming one", () => {
