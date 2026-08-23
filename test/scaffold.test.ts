@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtemp, mkdir, rm, writeFile, cp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Scaffold manifest checks.
@@ -74,6 +77,13 @@ describe("package.json", () => {
       "!**/.stride-env-cache",
       "!**/.stride-changed-files.json",
       "!**/.stride-diff-upload-state",
+      "!**/*.swp",
+      "!**/*.swo",
+      "!**/*~",
+      "!**/.idea",
+      "!**/.vscode",
+      "!**/*.sublime-*",
+      "!**/Thumbs.db",
     ]) {
       expect(files).toContain(pattern);
     }
@@ -100,6 +110,121 @@ describe("package.json", () => {
 
     // The scaffold predates the first shipped release (0.1.0).
     expect(pkg.version).toBe("0.0.0");
+  });
+});
+
+describe("packing", () => {
+  const scratchDirs: string[] = [];
+
+  afterAll(async () => {
+    await Promise.all(scratchDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  /**
+   * Pack a throwaway copy of this package with extra files planted in it, and
+   * return the relative paths the packer says it would ship.
+   *
+   * The copy is essential: this asserts what `bun pm pack` actually does, not
+   * what the `files` patterns look like, and it must not plant scratch files in
+   * the real working tree to do so.
+   */
+  const packWithPlantedFiles = async (
+    planted: Record<string, string>,
+  ): Promise<string[]> => {
+    const dir = await mkdtemp(join(tmpdir(), "opencode-stride-lite-pack-"));
+    scratchDirs.push(dir);
+
+    await cp(join(repoRoot, "package.json"), join(dir, "package.json"));
+    await cp(join(repoRoot, "README.md"), join(dir, "README.md"));
+    await cp(join(repoRoot, "LICENSE"), join(dir, "LICENSE"));
+    await mkdir(join(dir, "src"), { recursive: true });
+    await cp(join(repoRoot, "src/index.ts"), join(dir, "src/index.ts"));
+
+    for (const [relativePath, contents] of Object.entries(planted)) {
+      const target = join(dir, relativePath);
+      await mkdir(join(target, ".."), { recursive: true });
+      await writeFile(target, contents);
+    }
+
+    const packed = Bun.spawnSync({
+      cmd: ["bun", "pm", "pack", "--dry-run", "--ignore-scripts"],
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = new TextDecoder().decode(packed.stdout);
+    return output
+      .split("\n")
+      .map((line) => line.match(/^packed\s+\S+\s+(.+)$/)?.[1])
+      .filter((path): path is string => Boolean(path));
+  };
+
+  it("never ships transient artifacts placed inside the packed directories", async () => {
+    // A bare directory entry in `files` is recursive AND overrides .gitignore,
+    // so these would otherwise reach every consumer. This asserts the packer's
+    // real behaviour rather than the presence of the patterns, because the
+    // exclusion is the mitigation for a stated security consideration and the
+    // pattern form is subtle — `!**/.stride-opencode-lite/**` does not match
+    // under bun, while the bare `!**/.stride-opencode-lite` does.
+    const shipped = await packWithPlantedFiles({
+      "lib/.env": "SECRET=leak\n",
+      "lib/.env.local": "SECRET=leak\n",
+      "lib/scratch.local": "scratch\n",
+      "agents/.stride_auth.md": "token\n",
+      "skills/.stride-opencode-lite/marker": "marker\n",
+      "skills/.stride/marker": "marker\n",
+      "commands/.exploratory/session": "notes\n",
+      "lib/.stride-env-cache": "cache\n",
+      // Legitimate content, of several types, must still ship.
+      "skills/real.md": "content\n",
+      "skills/nested/deep/SKILL.md": "content\n",
+      "lib/helper.sh": "content\n",
+      "agents/data.json": "{}\n",
+    });
+
+    for (const leaked of [
+      "lib/.env",
+      "lib/.env.local",
+      "lib/scratch.local",
+      "agents/.stride_auth.md",
+      "skills/.stride-opencode-lite/marker",
+      "skills/.stride/marker",
+      "commands/.exploratory/session",
+      "lib/.stride-env-cache",
+    ]) {
+      expect(shipped).not.toContain(leaked);
+    }
+
+    // The negations must not have cost us the directories' actual contents.
+    for (const kept of [
+      "skills/real.md",
+      "skills/nested/deep/SKILL.md",
+      "lib/helper.sh",
+      "agents/data.json",
+    ]) {
+      expect(shipped).toContain(kept);
+    }
+  });
+
+  it("ships the plugin surface directories and excludes the test tree", async () => {
+    const shipped = await packWithPlantedFiles({
+      "skills/a.md": "x\n",
+      "agents/b.md": "x\n",
+      "commands/c.md": "x\n",
+      "test/example.test.ts": "x\n",
+      "fixtures/sample.json": "{}\n",
+      "src/helper.test.ts": "x\n",
+    });
+
+    expect(shipped).toContain("skills/a.md");
+    expect(shipped).toContain("agents/b.md");
+    expect(shipped).toContain("commands/c.md");
+    expect(shipped).toContain("src/index.ts");
+
+    expect(shipped).not.toContain("test/example.test.ts");
+    expect(shipped).not.toContain("fixtures/sample.json");
+    expect(shipped).not.toContain("src/helper.test.ts");
   });
 });
 

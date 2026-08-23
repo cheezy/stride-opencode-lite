@@ -57,6 +57,13 @@
     "!**/.stride-env-cache",
     "!**/.stride-changed-files.json",
     "!**/.stride-diff-upload-state",
+    "!**/*.swp",
+    "!**/*.swo",
+    "!**/*~",
+    "!**/.idea",
+    "!**/.vscode",
+    "!**/*.sublime-*",
+    "!**/Thumbs.db",
     "AGENTS.md",
     "README.md",
     "LICENSE"
