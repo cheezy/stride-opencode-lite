@@ -1,0 +1,54 @@
+{
+  "name": "opencode-stride-lite",
+  "version": "0.0.0",
+  "description": "Lightweight Stride task lifecycle skills and agents for OpenCode: claiming, completing, creating tasks and goals",
+  "main": "src/index.ts",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "author": {
+    "name": "Jeff Morgan",
+    "email": "cheezy@letstango.ca"
+  },
+  "homepage": "https://github.com/cheezy/stride-opencode-lite",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cheezy/stride-opencode-lite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cheezy/stride-opencode-lite/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "stride",
+    "stride-lite",
+    "kanban",
+    "tasks",
+    "ai-agents",
+    "workflow",
+    "opencode",
+    "opencode-plugin"
+  ],
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@types/bun": "latest",
+    "typescript": "latest"
+  },
+  "files": [
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "skills/",
+    "agents/",
+    "commands/",
+    "lib/",
+    "AGENTS.md",
+    "README.md",
+    "LICENSE"
+  ]
+}

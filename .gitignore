@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editor cruft
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Local secrets
+.env
+.env.local
+*.local
+
+# Bun. The lockfile is deliberately not committed: the plugin API arrives as a
+# peer dependency, so a lock resolved against one API version would pin every
+# consumer of this checkout to it.
+bun.lock
+
+# Full Stride plugin (which drives work in this checkout): its orchestrator
+# marker directory and its bearer-token auth file. Never committed.
+.stride/
+.stride_auth.md
+
+# Stride hook state artifacts (regenerated every after_doing run; never committed)
+.stride-changed-files.json
+.stride-diff-upload-state
+.stride-env-cache
+
+# stride-opencode-lite orchestrator activation marker (transient session state).
+# Deliberately NOT .stride/ — that directory belongs to the full Stride plugin
+# and a project may have both installed.
+.stride-opencode-lite/
+
+# stride-exploratory-testing artifacts: session sheets, backlog, coverage, and
+# the regression checks /harden stages. They arrive UNTRACKED, so a project gate
+# that stages everything before committing would sweep them into a commit.
+# Ignore before the first session — .gitignore is inert for a path git already
+# tracks.
+.exploratory/
