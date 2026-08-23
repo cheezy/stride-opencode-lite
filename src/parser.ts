@@ -54,7 +54,13 @@ export function parseStrideMd(content: string, hookName: HookName): string[] {
   for (const line of lines) {
     if (line.startsWith("## ")) {
       if (found) break;
-      const section = line.slice(3).trim();
+      // Strip trailing whitespace only, never leading. The bash implementation
+      // removes the literal "## " prefix and then trims the tail, so a heading
+      // with extra leading space ("##  before_task") matches no section and is
+      // a clean no-op there. Trimming both ends here would make that malformed
+      // heading live — its block would execute under this plugin while staying
+      // inert under stride-lite.
+      const section = line.slice(3).replace(/\s+$/, "");
       if (section === hookName) {
         found = true;
       }

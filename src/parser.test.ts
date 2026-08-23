@@ -171,16 +171,32 @@ echo executable
   });
 
   it("handles a heading with trailing whitespace", () => {
-    const content = `## before_task
+    // The whitespace is built by concatenation rather than typed into the
+    // literal: an editor or formatter that strips trailing spaces on save would
+    // silently turn this into a duplicate of the plain-heading test, which is
+    // exactly what it did before.
+    const heading = "## before_task" + "   \t";
+    const content = `${heading}\n\n\`\`\`bash\necho trailing space heading\n\`\`\`\n`;
 
-\`\`\`bash
-echo trailing space heading
-\`\`\`
-`;
-
+    expect(content).toMatch(/## before_task[ \t]+\n/);
     expect(parseStrideMd(content, "before_task")).toEqual([
       "echo trailing space heading",
     ]);
+  });
+
+  it("does not match a heading with extra leading whitespace, as bash does not", () => {
+    // Bash strips the literal "## " prefix and then trims only the tail, so
+    // "##  before_task" (two spaces) matches no section and its block never
+    // runs. Trimming both ends would make that malformed heading executable
+    // here while staying inert under stride-lite.
+    const content = `##  before_task
+
+\`\`\`bash
+echo should not run
+\`\`\`
+`;
+
+    expect(parseStrideMd(content, "before_task")).toEqual([]);
   });
 
   it("handles a file with no trailing newline", () => {

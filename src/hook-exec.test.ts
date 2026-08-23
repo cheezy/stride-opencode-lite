@@ -13,6 +13,7 @@ import {
   killProcessGroup,
   tailLines,
 } from "./hook-exec";
+import { parseStrideLiteFile } from "./parser";
 
 /**
  * The normative key sets, taken from the two `printf` calls in
@@ -437,6 +438,126 @@ describe("hookExitCode", () => {
     // The failure is still reported in the result; it just does not block.
     expect(result?.status).toBe("failed");
     expect(hookExitCode("after_goal", result)).toBe(0);
+  });
+});
+
+describe("end to end: parse a real file and execute it", () => {
+  /**
+   * Wires parseStrideLiteFile into executeHookCommands against a realistic
+   * three-section file. This is the seam the plugin entry point will use, and
+   * neither module's own tests exercise it.
+   *
+   * The commands are inert: they touch marker files inside a scratch directory
+   * and nothing else.
+   */
+  const writeConfig = async (dir: string, markers: Record<string, string>) => {
+    const content = `# Stride Lite Configuration
+
+## email
+
+somebody@example.com
+
+## before_task
+
+\`\`\`bash
+touch ${markers.before}
+\`\`\`
+
+## after_task
+
+\`\`\`bash
+# Available: HOOK_NAME TASK_FILE TASK_NUMBER TASK_TITLE GOAL_DIR
+touch ${markers.after}
+echo after_task ran
+\`\`\`
+
+## after_goal
+
+\`\`\`bash
+sh -c "exit 9"
+\`\`\`
+`;
+    await Bun.write(join(dir, ".stride_lite.md"), content);
+  };
+
+  it("runs each section's own commands and nothing else", async () => {
+    const dir = await scratchDir();
+    const markers = {
+      before: join(dir, "before.marker"),
+      after: join(dir, "after.marker"),
+    };
+    await writeConfig(dir, markers);
+    const configPath = join(dir, ".stride_lite.md");
+
+    const beforeCommands = await parseStrideLiteFile(configPath, "before_task");
+    const beforeResult = await executeHookCommands("before_task", beforeCommands, {
+      cwd: dir,
+    });
+
+    expect(beforeResult?.status).toBe("success");
+    expect(existsSync(markers.before)).toBe(true);
+    // The before_task section must not have run the after_task section's work.
+    expect(existsSync(markers.after)).toBe(false);
+
+    const afterCommands = await parseStrideLiteFile(configPath, "after_task");
+    // The documentation comment lines are filtered out before execution.
+    expect(afterCommands).toEqual([`touch ${markers.after}`, "echo after_task ran"]);
+
+    const afterResult = await executeHookCommands("after_task", afterCommands, {
+      cwd: dir,
+    });
+
+    expect(afterResult?.status).toBe("success");
+    expect(existsSync(markers.after)).toBe(true);
+    expect(Object.keys(afterResult!)).toEqual(BASH_SUCCESS_KEYS);
+  });
+
+  it("carries an advisory section's failure without turning it into a block", async () => {
+    const dir = await scratchDir();
+    await writeConfig(dir, {
+      before: join(dir, "b.marker"),
+      after: join(dir, "a.marker"),
+    });
+
+    const commands = await parseStrideLiteFile(
+      join(dir, ".stride_lite.md"),
+      "after_goal",
+    );
+    const result = await executeHookCommands("after_goal", commands, { cwd: dir });
+
+    expect(result).toMatchObject({ status: "failed", exit_code: 9 });
+    expect(Object.keys(result!)).toEqual(BASH_FAILURE_KEYS);
+    // Reported, but advisory — it must not block.
+    expect(hookExitCode("after_goal", result)).toBe(0);
+  });
+
+  it("is a clean no-op end to end when the file is absent", async () => {
+    const dir = await scratchDir();
+    const missing = join(dir, ".stride_lite.md");
+
+    const commands = await parseStrideLiteFile(missing, "before_task");
+    const result = await executeHookCommands("before_task", commands, { cwd: dir });
+
+    expect(commands).toEqual([]);
+    expect(result).toBeNull();
+    expect(hookExitCode("before_task", result)).toBe(0);
+  });
+
+  it("is a clean no-op end to end when the section is absent", async () => {
+    const dir = await scratchDir();
+    await Bun.write(
+      join(dir, ".stride_lite.md"),
+      "## before_task\n\n```bash\ntrue\n```\n",
+    );
+
+    const commands = await parseStrideLiteFile(
+      join(dir, ".stride_lite.md"),
+      "after_goal",
+    );
+    const result = await executeHookCommands("after_goal", commands, { cwd: dir });
+
+    expect(commands).toEqual([]);
+    expect(result).toBeNull();
   });
 });
 
