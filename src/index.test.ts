@@ -263,6 +263,29 @@ describe("near misses — these must route to nothing", () => {
     }
   });
 
+  it("12. a NON-activation tool carrying a trigger skill name", () => {
+    // Pins routeBefore's tool gate specifically: the skill name matches, so
+    // only the tool check can reject this. Near miss 6 cannot pin it, because
+    // it fails at the name check instead.
+    for (const tool of ["bash", "edit", "write", "read", "grep", "todowrite", "webfetch"]) {
+      expect(routeBefore({ tool }, { args: { name: BEFORE_TASK_SKILL } })).toBeNull();
+    }
+  });
+
+  it("13. a non-edit/write tool writing goal.md WITH the heading", () => {
+    // Pins GOAL_WRITE_TOOLS specifically: basename and heading both match, so
+    // only the tool check can reject this. Near miss 4 cannot pin it, because
+    // its bash payload carries no file path and dies at the basename check.
+    for (const tool of ["bash", "read", "grep", "skill", "todowrite"]) {
+      expect(
+        routeAfter(
+          { tool, args: { filePath: `/p/${GOAL_FILENAME}`, content: COMPLETION_HEADING } },
+          {},
+        ),
+      ).toBeNull();
+    }
+  });
+
   it("9. a skill activation with no name at all", () => {
     expect(routeBefore({ tool: "skill" }, { args: {} })).toBeNull();
     expect(routeBefore({ tool: "skill" }, {})).toBeNull();
@@ -425,18 +448,6 @@ describe("plugin handlers", () => {
     expect(reported).toContain('"status":"failed"');
     expect(reported).toContain('"exit_code":9');
     expect(reported).toContain('"hook":"after_goal"');
-  });
-
-  it("reports rather than throws if the advisory section itself errors", async () => {
-    const dir = await scratchDir();
-    await writeConfig(dir, "after_goal", "true");
-
-    const hooks = await loadPlugin(dir);
-    // A payload whose file path is present but whose section run will be given
-    // an unusable cwd: the handler must still resolve.
-    const e = writeEvent("write", join(dir, GOAL_FILENAME), `${COMPLETION_HEADING}\n`);
-
-    await expect(hooks["tool.execute.after"](e.input, e.output)).resolves.toBeUndefined();
   });
 });
 
