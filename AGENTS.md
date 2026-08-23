@@ -128,6 +128,18 @@ files, and reads no credential or auth file. It reads exactly one file — the
 project's `.stride_lite.md` — and runs the commands the user wrote in it. A test
 scans the entry point's source for the forbidden tokens and pins its import list.
 
+## Repository layout
+
+| Path | Holds |
+|---|---|
+| `src/` | The TypeScript plugin: the hook parser, the executor, and the entry point |
+| `lib/` | One markdown **spec** per pure helper — normative documentation, not code |
+| `skills/` | Skill definitions |
+| `agents/` | Agent definitions |
+| `commands/` | Command definitions |
+| `fixtures/` | Test fixtures |
+| `test/` | Scaffold and packaging tests (module tests are co-located in `src/`) |
+
 ## The `lib/` convention
 
 `lib/` holds one markdown **spec** per pure helper — not executable code. Each

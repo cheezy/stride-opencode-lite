@@ -45,6 +45,9 @@ describe("package.json", () => {
     expect(files).toContain("skills/");
     expect(files).toContain("agents/");
     expect(files).toContain("commands/");
+    // lib/ ships the four helper contract specs; dropping it from the files
+    // list would silently publish a plugin without them.
+    expect(files).toContain("lib/");
 
     expect(files).toContain("!src/**/*.test.ts");
     expect(files).not.toContain("test/");
@@ -212,6 +215,7 @@ describe("packing", () => {
       "skills/a.md": "x\n",
       "agents/b.md": "x\n",
       "commands/c.md": "x\n",
+      "lib/d.md": "x\n",
       "test/example.test.ts": "x\n",
       "fixtures/sample.json": "{}\n",
       "src/helper.test.ts": "x\n",
@@ -220,6 +224,7 @@ describe("packing", () => {
     expect(shipped).toContain("skills/a.md");
     expect(shipped).toContain("agents/b.md");
     expect(shipped).toContain("commands/c.md");
+    expect(shipped).toContain("lib/d.md");
     expect(shipped).toContain("src/index.ts");
 
     expect(shipped).not.toContain("test/example.test.ts");
