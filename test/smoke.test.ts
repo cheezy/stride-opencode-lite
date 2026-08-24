@@ -61,10 +61,14 @@ describe("test/smoke.sh", () => {
 
     // Each stage asserted by its label. Exit code alone cannot distinguish
     // "every check passed" from "the checks never ran".
+    // The PASS prefix is required: skipped() prints the IDENTICAL label, so a
+    // bare substring match cannot tell a stage that passed from one that was
+    // skipped — the very distinction this assertion exists to make.
     for (const label of [
       "create-goal taskN template extracted non-empty",
       "create-task taskN template extracted non-empty",
       "both taskN templates are structurally complete",
+      "the hash pin rejects altered content",
       "the two create skills' taskN templates are byte-identical",
       "both taskN templates match the stride-lite source hash",
       "the parity comparison detects a one-byte divergence",
@@ -72,7 +76,7 @@ describe("test/smoke.sh", () => {
       "init canonical template has its four sections",
       "init's clobber guard tests -L as well as -e",
     ]) {
-      expect(stdout).toContain(label);
+      expect(stdout).toContain(`PASS  ${label}`);
     }
   });
 

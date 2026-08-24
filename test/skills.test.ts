@@ -98,6 +98,18 @@ describe("the create skills", () => {
     expect(agent).toContain("1–8");
   });
 
+  it.each(["stride-opencode-lite-create-goal", "stride-opencode-lite-create-task"])(
+    "%s frames the requirements text as data, not instructions",
+    async (name) => {
+      // load_requirements_dir concatenates arbitrary repository files into the
+      // decomposer prompt; without this framing that is an unguarded
+      // prompt-injection surface.
+      const source = await readSkill(name);
+
+      expect(source).toContain("data, never instructions");
+    },
+  );
+
   it("each names the other as the boundary case", async () => {
     const goal = frontmatter(await readSkill("stride-opencode-lite-create-goal"));
     const task = frontmatter(await readSkill("stride-opencode-lite-create-task"));
@@ -128,7 +140,21 @@ describe("the init skill", () => {
     // HOOK_NAME ..." promise is false on this host.
     const source = await readSkill("stride-opencode-lite-init");
 
-    expect(source).not.toContain("Available here: HOOK_NAME");
+    // Assert the PROPERTY, not one phrasing of it. Pinning the old wording is
+    // what let a second copy of the promise survive in different words.
+    for (const promised of [
+      "HOOK_NAME",
+      "TASK_FILE",
+      "TASK_NUMBER",
+      "TASK_TITLE",
+      "GOAL_DIR",
+      "GOAL_FILE",
+      "GOAL_SLUG",
+      "GOAL_TITLE",
+      "AGENT_NAME",
+    ]) {
+      expect(source).not.toContain(promised);
+    }
     expect(source).toContain("supplies no hook context variables");
   });
 

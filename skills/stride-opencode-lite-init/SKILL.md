@@ -10,7 +10,7 @@ metadata:
 
 # stride-opencode-lite-init
 
-Surface skill for the init flow. Writes a project-local `.stride_lite.md` file with the canonical four-section template, and prints a one-paragraph message asking the user to fill in the fields. The hook sections (`before_task`, `after_task`, `after_goal`) are **executed automatically by this plugin's OpenCode hooks (`src/index.ts`).9.0** — `before_task` and `after_task` blocking (the handler throws, which aborts the tool call), `after_goal` advisory. The format mirrors the full Stride plugin's `.stride.md` so users moving between the two plugins recognize the shape.
+Surface skill for the init flow. Writes a project-local `.stride_lite.md` file with the canonical four-section template, and prints a one-paragraph message asking the user to fill in the fields. The hook sections (`before_task`, `after_task`, `after_goal`) are **executed automatically by this plugin's OpenCode hooks (`src/index.ts`)** — `before_task` and `after_task` blocking (the handler throws, which aborts the tool call), `after_goal` advisory. The format mirrors the full Stride plugin's `.stride.md` so users moving between the two plugins recognize the shape.
 
 ## What this skill does
 
@@ -25,7 +25,7 @@ That is the entire side effect.
 ## What this skill does NOT do
 
 - **Never POSTs to any API.** stride-lite remains a "no network" plugin.
-- **Never executes the hook sections.** The init skill is a pure scaffolder — it writes the template, prints the success message, exits. The hook sections (`## before_task`, `## after_task`, `## after_goal`) are executed automatically by this plugin's OpenCode hooks (`src/index.ts`).9.0+), not by this skill.
+- **Never executes the hook sections.** The init skill is a pure scaffolder — it writes the template, prints the success message, exits. The hook sections (`## before_task`, `## after_task`, `## after_goal`) are executed automatically by this plugin's OpenCode hooks (`src/index.ts`), not by this skill.
 - **Never writes outside the current working directory.** No absolute paths, no parent traversal (`../`), no `$HOME` resolution. The target is always `./.stride_lite.md` relative to the cwd at invocation time.
 - **Never clobbers an existing `.stride_lite.md`** unless `--force` is supplied. Mirrors the safety posture of `install.sh:54-67`.
 - **Never asks the user mid-flow.** The invocation is fire-and-forget.
@@ -86,9 +86,9 @@ Open the file and fill in the four sections:
   - ## after_task — the shell commands you want to run after each task's implementation (auto-fired by the OpenCode harness before each task-reviewer dispatch; blocking — the handler throws, which aborts the tool call)
   - ## after_goal — the shell commands you want to run when the final task in a goal completes (auto-fired by the OpenCode harness after the goal-level Completion Summary is written; advisory)
 
-The hook sections are executed automatically by the OpenCode harness via the plugin's `src/index.ts` at the corresponding lifecycle points (v0.9.0+). The format mirrors the full Stride plugin's .stride.md so your snippets transfer across plugins.
+The hook sections are executed automatically by the OpenCode harness via this plugin's `src/index.ts` at the corresponding lifecycle points. The format mirrors the full Stride plugin's .stride.md so your snippets transfer across plugins.
 
-Each hook command receives the task/goal context as environment variables: HOOK_NAME, TASK_FILE, TASK_NUMBER, TASK_TITLE, GOAL_DIR, GOAL_FILE, GOAL_SLUG, GOAL_TITLE and AGENT_NAME. Anything that cannot be derived is exported as the empty string, never an error.
+This plugin supplies no hook context variables. Hook commands run with the session's own environment, so a command referencing a per-task variable sees an empty value rather than a task detail.
 ```
 
 That is the entire stdout output. The skill does not chain into any follow-up command.
@@ -100,9 +100,9 @@ The skill writes this exact text to `./.stride_lite.md`. Keep the section order 
 ````markdown
 # Stride Lite Configuration
 
-This file is created by `the `stride-opencode-lite-init` skill`. Fill in the fields below.
+This file is created by the `stride-opencode-lite-init` skill. Fill in the fields below.
 
-**Note (v0.9.0+):** The hook sections are executed automatically by this plugin's OpenCode hooks (`src/index.ts`). The format mirrors the full Stride plugin's `.stride.md` so your snippets transfer across plugins. Each hook command also receives the task/goal context as environment variables — This plugin supplies no hook context variables: hook commands run with the session's own environment, so a command referencing `HOOK_NAME`, `TASK_FILE` or `TASK_TITLE` sees an empty value.
+**Note:** The hook sections are executed automatically by this plugin's OpenCode hooks (`src/index.ts`). The format mirrors the full Stride plugin's `.stride.md` so your snippets transfer across plugins. This plugin supplies no hook context variables: hook commands run with the session's own environment, so a command referencing a per-task variable sees an empty value.
 
 ## email
 
@@ -117,7 +117,7 @@ your-email@example.com
 
 ```bash
 # Commands run as written. This plugin supplies no hook context variables.
-# echo "Finished task $TASK_NUMBER of $GOAL_SLUG: $TASK_TITLE"
+# echo "after_task hook ran"
 ```
 
 ## after_goal
@@ -128,12 +128,12 @@ your-email@example.com
 
 ## Pitfalls
 
-- **Don't execute the hook sections in THIS skill.** The init skill is a pure scaffolder — write the file, print the message, exit. Hook execution is the OpenCode harness's job via the plugin's ``src/index.ts`` (v0.9.0+).
+- **Don't execute the hook sections in THIS skill.** The init skill is a pure scaffolder — write the file, print the message, exit. Hook execution is the OpenCode harness's job via the plugin's `src/index.ts` .
 - **Don't omit any of the four sections.** The template contract is exact: `## email`, `## before_task`, `## after_task`, `## after_goal`, in that order.
 - **Don't clobber an existing `.stride_lite.md` without `--force`.** Refuse and exit non-zero with a clear message pointing to the flag.
 - **Don't write the file anywhere except the cwd.** No absolute paths, no parent traversal, no `$HOME` or `$XDG_CONFIG_HOME` resolution.
 - **Don't make any API calls.** No `curl`, no Stride client, no network.
-- **Don't add `the `stride-opencode-lite-init` skill` as a prerequisite to the other surface commands.** `the `stride-opencode-lite-create-goal` skill` and `the `stride-opencode-lite-create-task` skill` must continue to work without `.stride_lite.md` present.
+- **Don't add the `stride-opencode-lite-init` skill as a prerequisite to the other surface commands.** the `stride-opencode-lite-create-goal` skill and the `stride-opencode-lite-create-task` skill must continue to work without `.stride_lite.md` present.
 
 ## Edge cases
 
@@ -159,16 +159,16 @@ If you catch yourself thinking any of these, stop: this skill writes one file an
 - "The create commands should really require `init` first — I'll say so."
 - "I'll check that the email address resolves before I write the file."
 
-**All of these mean: write the template, print the message, exit.** Hook execution belongs to the OpenCode harness via `hooks/`src/index.ts``; running a section here either doubles its side effects or removes the `a thrown error` that was the whole point of it.
+**All of these mean: write the template, print the message, exit.** Hook execution belongs to the OpenCode harness via `src/index.ts`; running a section here either doubles its side effects or removes the the thrown error that was the whole point of it.
 
 ## Rationalization Table
 
 | Excuse | Reality | Consequence |
 |---|---|---|
-| "I just scaffolded `.stride_lite.md` — I'll run the `## before_task` block once to prove it works." | This skill is a **pure scaffolder**: write the file, print the message, exit. The OpenCode harness fires the sections from `hooks/`src/index.ts`` at the real lifecycle intercept points. | The section runs **twice** — once by your hand and once when the harness fires it on the real dispatch — so an `## after_goal` that tags a release, deploys, or posts a notification does all of it twice, and neither run knows about the other. |
-| "The harness fires `## after_task` anyway — running it here is the same thing, just earlier." | `before_task` and `after_task` are **blocking `tool.execute.before`** hooks. Their entire value is the `a thrown error` that stops the dispatch. | Run by hand, a non-zero exit is a message on your screen and nothing more: the `stride-lite:task-reviewer` dispatch it was supposed to block proceeds, so the gate never fires at all. The failure mode is not "ran twice" but "never ran". |
+| "I just scaffolded `.stride_lite.md` — I'll run the `## before_task` block once to prove it works." | This skill is a **pure scaffolder**: write the file, print the message, exit. The OpenCode harness fires the sections from `src/index.ts` at the real lifecycle intercept points. | The section runs **twice** — once by your hand and once when the harness fires it on the real dispatch — so an `## after_goal` that tags a release, deploys, or posts a notification does all of it twice, and neither run knows about the other. |
+| "The harness fires `## after_task` anyway — running it here is the same thing, just earlier." | `before_task` and `after_task` are **blocking `tool.execute.before`** hooks. Their entire value is the the thrown error that stops the dispatch. | Run by hand, a non-zero exit is a message on your screen and nothing more: the `stride-lite:task-reviewer` dispatch it was supposed to block proceeds, so the gate never fires at all. The failure mode is not "ran twice" but "never ran". |
 | "`.stride_lite.md` already exists but it's probably still the default template — I'll pass `--force` and rewrite it." | With `--force` the target is removed before the write. Without it the skill refuses and exits non-zero pointing at the flag. | The user's filled-in `## before_task`, `## after_task` and `## after_goal` — their test command, their deploy step, their contact address — are deleted with no prompt, no backup and no diff, and the skill prints its ordinary success message on top. |
 | "The user ran this from a subdirectory — they clearly meant the repo root, so I'll resolve up to it." | The target is exactly `./.stride_lite.md` relative to the cwd at invocation: no `../`, no `$HOME`, no canonicalization, no symlink following. | In a monorepo or a nested checkout the root you resolve to is a directory the user never named, and a `.stride_lite.md` already sitting there — with somebody else's `## after_task` in it — is the file you are about to collision-check and, under `--force`, delete. |
 | "The user has no goal-completion command — I'll leave `## after_goal` out of the scaffold." | The template contract is exact and ordered: `## email`, `## before_task`, `## after_task`, `## after_goal`. An empty fenced `bash` block is the intended no-op shape for an unused hook. | `test/smoke.sh` byte-diffs this template against its own copy, so the suite goes red immediately — and the user never discovers `after_goal` exists, because the scaffold is the only place it is ever named to them. |
-| "`the `stride-opencode-lite-create-goal` skill` will want hooks eventually — I'll tell the user to run `the `stride-opencode-lite-init` skill` first." | Init is deliberately **not** a prerequisite for either create command, and `stride-opencode-lite-workflow` treats a missing `.stride_lite.md` as a valid reduced-functionality configuration. | You attach a required setup step to `the `stride-opencode-lite-create-goal` skill` and `the `stride-opencode-lite-create-task` skill`, which both work without one, and a user who declines it reads your message as "the create commands are broken" and stops using them. |
+| "the `stride-opencode-lite-create-goal` skill will want hooks eventually — I'll tell the user to run the `stride-opencode-lite-init` skill first." | Init is deliberately **not** a prerequisite for either create command, and `stride-opencode-lite-workflow` treats a missing `.stride_lite.md` as a valid reduced-functionality configuration. | You attach a required setup step to the `stride-opencode-lite-create-goal` skill and the `stride-opencode-lite-create-task` skill, which both work without one, and a user who declines it reads your message as "the create commands are broken" and stops using them. |
 | "The `## email` field is filled in — I'll validate the address or send a test message so they know it works." | stride-lite makes no network request of any kind. The `## email` value is scaffold text; the hook executor dispatches only on the three hook section names and never reads it. | A scaffolder that makes a request is a scaffolder that hangs on a slow DNS lookup, fails on an offline machine, or transmits the user's address off it — and `AGENTS.md`'s no-network contract, which is why this plugin ships with no credential store, stops being true. |

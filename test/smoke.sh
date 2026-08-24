@@ -137,8 +137,20 @@ else
 fi
 
 # --- The parity comparison ----------------------------------------------
+# The comparison is a function so the negative controls below can drive THE
+# PRODUCTION PATH rather than re-implementing a diff. Controls that build their
+# own comparison test diff(1), not this script, and stay green while the real
+# assertion is neutered.
+templates_agree() {
+  diff -u "$1" "$2" > "$WORK/diff.out" 2>&1
+}
+
+matches_pinned_hash() {
+  [ "$(shasum -a 256 "$1" | cut -d' ' -f1)" = "$EXPECTED_TASKN_SHA256" ]
+}
+
 if [ "$PARITY_CREDITED" -eq 1 ]; then
-  if diff -u "$WORK/goal.txt" "$WORK/task.txt" > "$WORK/diff.out" 2>&1; then
+  if templates_agree "$WORK/goal.txt" "$WORK/task.txt"; then
     ok "the two create skills' taskN templates are byte-identical"
   else
     nope "the two create skills' taskN templates are byte-identical" \
@@ -153,8 +165,7 @@ fi
 if [ "$PARITY_CREDITED" -eq 1 ]; then
   sha_mismatch=0
   for side in goal task; do
-    actual="$(shasum -a 256 "$WORK/$side.txt" | cut -d' ' -f1)"
-    [ "$actual" = "$EXPECTED_TASKN_SHA256" ] || sha_mismatch=1
+    matches_pinned_hash "$WORK/$side.txt" || sha_mismatch=1
   done
   if [ "$sha_mismatch" -eq 0 ]; then
     ok "both taskN templates match the stride-lite source hash"
@@ -182,21 +193,35 @@ fi
 
 # --- Negative controls ---------------------------------------------------
 if [ "$PARITY_CREDITED" -eq 1 ]; then
+  # Drive templates_agree — the same function the real assertion calls — with a
+  # known-divergent pair. If someone neuters that function, this goes red too.
   sed '1s/$/ /' "$WORK/goal.txt" > "$WORK/perturbed.txt"
-  if diff -q "$WORK/goal.txt" "$WORK/perturbed.txt" >/dev/null 2>&1; then
+  if templates_agree "$WORK/goal.txt" "$WORK/perturbed.txt"; then
     nope "the parity comparison detects a one-byte divergence (negative control)" \
-         "a one-byte change compared equal"
+         "templates_agree returned success for a one-byte divergence"
   else
     ok "the parity comparison detects a one-byte divergence (negative control)"
   fi
 
+  # Same for the hash pin: drive matches_pinned_hash with content that must not
+  # match, rather than asserting a property of the shell.
+  if matches_pinned_hash "$WORK/perturbed.txt"; then
+    nope "the hash pin rejects altered content (negative control)" \
+         "matches_pinned_hash accepted a perturbed template"
+  else
+    ok "the hash pin rejects altered content (negative control)"
+  fi
+
+  # And that an empty extraction cannot be credited by the same comparison.
   : > "$WORK/empty.txt"
-  if [ -s "$WORK/empty.txt" ]; then
-    nope "an empty extraction is refused, not credited (negative control)" "empty file read as non-empty"
+  if templates_agree "$WORK/empty.txt" "$WORK/goal.txt"; then
+    nope "an empty extraction is refused, not credited (negative control)" \
+         "an empty file compared equal to the template"
   else
     ok "an empty extraction is refused, not credited (negative control)"
   fi
 else
+  skipped "the hash pin rejects altered content (negative control)" "parity not credited"
   skipped "the parity comparison detects a one-byte divergence (negative control)" "parity not credited"
   skipped "an empty extraction is refused, not credited (negative control)" "parity not credited"
 fi
@@ -218,11 +243,16 @@ if [ -s "$WORK/init_a.txt" ] && [ -s "$WORK/init_b.txt" ]; then
   else
     nope "the two init extractors agree" "independent extractions differ"
   fi
+  sections_ok=1
   for want in '^## email$' '^## before_task$' '^## after_task$' '^## after_goal$'; do
-    grep -q "$want" "$WORK/init_a.txt" \
-      || nope "init template section present" "$want"
+    grep -q "$want" "$WORK/init_a.txt" || sections_ok=0
   done
-  ok "init template carries the section names the parser recognises"
+  if [ "$sections_ok" -eq 1 ]; then
+    ok "init template carries the section names the parser recognises"
+  else
+    nope "init template carries the section names the parser recognises" \
+         "a required section heading is missing"
+  fi
 else
   nope "init canonical template extracted non-empty by both extractors" \
        "one or both extractions were empty"
