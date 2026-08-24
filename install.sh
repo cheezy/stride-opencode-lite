@@ -88,7 +88,12 @@ fi
 manifest() {
   (
     cd "$SRC" || exit 1
-    find skills -mindepth 2 -type f -print
+    # ONE predicate, matching the git cross-check below exactly. They used to
+    # differ — skills/**/* against a '\.md$' grep — which left a non-.md file in
+    # a skill invisible to the record, and a tracked depth-1 skills/*.md
+    # reported as a false failure. Neither could happen today; both were
+    # structurally possible, which is enough.
+    find skills -mindepth 1 -type f -name '*.md' -print
     find agents commands lib -maxdepth 1 -type f -name '*.md' -print
   )
 }
@@ -155,6 +160,7 @@ done
 # independently-coded extractors.
 MISSING=""
 DIFFERING=""
+EMPTY_SOURCE=""
 INSTALLED=0
 EXPECTED=0
 
@@ -168,8 +174,16 @@ while IFS= read -r rel; do
     MISSING="$MISSING  $rel
 "
   elif [ ! -s "$dest" ]; then
-    DIFFERING="$DIFFERING  $rel (empty)
+    # Attribute it correctly: if the SOURCE is empty too, the copy was perfect
+    # and the source is the problem. Blaming the destination sends the reader
+    # to the wrong file.
+    if [ ! -s "$src" ]; then
+      EMPTY_SOURCE="$EMPTY_SOURCE  $rel (empty)
 "
+    else
+      DIFFERING="$DIFFERING  $rel (empty)
+"
+    fi
   elif ! cmp -s "$src" "$dest"; then
     DIFFERING="$DIFFERING  $rel (content differs from source)
 "
@@ -226,12 +240,13 @@ for dir in skills agents commands lib; do
 done
 d_skills=$(find "$DEST_ROOT/skills" -mindepth 1 -maxdepth 1 -type d -name 'stride-opencode-lite-*' | wc -l | tr -d ' ')
 
-if [ -n "$MISSING" ] || [ -n "$DIFFERING" ] || [ -n "$COUNT_DRIFT" ] || [ "$INSTALLED" -ne "$EXPECTED" ]; then
+if [ -n "$MISSING" ] || [ -n "$DIFFERING" ] || [ -n "$EMPTY_SOURCE" ] || [ -n "$COUNT_DRIFT" ] || [ "$INSTALLED" -ne "$EXPECTED" ]; then
   printf 'install.sh: INSTALL IS INCOMPLETE — %d of %d files verified at %s\n' \
     "$INSTALLED" "$EXPECTED" "$DEST_ROOT" >&2
   # Name the paths. "12 of 14" without saying which two is not actionable.
   [ -n "$MISSING" ]     && { printf 'Missing after copy:\n' >&2;   printf '%s' "$MISSING" >&2; }
   [ -n "$DIFFERING" ]   && { printf 'Corrupt after copy:\n' >&2;   printf '%s' "$DIFFERING" >&2; }
+  [ -n "$EMPTY_SOURCE" ] && { printf 'Empty in the source:\n' >&2;  printf '%s' "$EMPTY_SOURCE" >&2; }
   [ -n "$COUNT_DRIFT" ] && { printf 'Count mismatch:\n' >&2;       printf '%s' "$COUNT_DRIFT" >&2; }
   # No rollback: deleting here risks removing content that --force legitimately
   # overwrote. Say loudly what is wrong and leave it.

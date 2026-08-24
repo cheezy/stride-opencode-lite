@@ -347,9 +347,21 @@ describe("README", () => {
 
     expect(readme).toContain("has **not** been run on Windows");
     expect(readme).toContain("unverified");
-    // The claim that would be false.
-    expect(readme).not.toContain("Windows support");
-    expect(readme).not.toMatch(/cross-platform installers/i);
+    // Deny-listing phrasings is not enough — a plural-only regex walks past the
+    // singular, and no list anticipates every way to overclaim. Instead: NO
+    // sentence mentioning Windows may make a positive verification claim. That
+    // catches a new false claim, not only the ones foreseen.
+    const windowsSentences = readme
+      .split(/(?<=\.)\s+/)
+      .filter((sentence) => /\bwindows\b/i.test(sentence));
+
+    expect(windowsSentences.length).toBeGreaterThan(0);
+    for (const sentence of windowsSentences) {
+      const positiveClaim = /\b(verified|tested|works|working|supported|supports?)\b/i.test(sentence);
+      const negated = /\b(not|never|no|unverified|untested)\b/i.test(sentence);
+
+      if (positiveClaim) expect(sentence).toSatisfy(() => negated);
+    }
   });
 
   it("keeps the dormancy statement as strong as the code requires", async () => {
@@ -360,9 +372,16 @@ describe("README", () => {
 
     expect(readme).toContain("dormant on today's build");
     expect(readme).toContain("`before_task` and `after_task` do not fire");
-    // And the reason, which is what stops it being "re-enabled" by wishful edit.
-    expect(readme).toContain("emits no");
-    expect(readme).not.toMatch(/before_task fires when/i);
+    // The whole reason, not a two-word fragment: "emits no" is a token that
+    // survives inside "emits no fewer events than a tool call", which asserts
+    // the opposite. This is the mistake this very test was written to avoid.
+    expect(readme).toContain("`@mention` dispatch emits no `tool.execute.*` event");
+    // And no sentence may claim the blocking triggers fire.
+    for (const sentence of readme.split(/(?<=\.)\s+/)) {
+      if (/\b(before_task|after_task|blocking (hook )?triggers?)\b/.test(sentence)) {
+        expect(sentence).not.toMatch(/\bfires? (on|when|every)\b/i);
+      }
+    }
   });
 
   it("states the security model without overstating it", async () => {

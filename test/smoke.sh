@@ -688,14 +688,14 @@ fi
 README_FILE="${STRIDE_SMOKE_README:-$REPO_ROOT/README.md}"
 WORDS="zero one two three four five six seven eight nine"
 
-word_for() {  # $1 = a number
+word_for() {  # $1 = a number; empty output means OUT OF RANGE, never "no word"
   printf '%s' "$WORDS" | awk -v n="$1" '{print $(n + 1)}'
 }
 
 # Every count derived with find, never hard-coded: a literal number here would
 # be the second stale copy the whole stage exists to prevent.
 readme_counts_agree() {  # $1 = README to check, $2 = root to count
-  local readme="$1" root="$2" bad=""
+  local readme="$1" root="$2" bad="" w
   local n_lib n_agents n_skills n_commands
 
   n_lib=$(find "$root/lib" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
@@ -703,10 +703,19 @@ readme_counts_agree() {  # $1 = README to check, $2 = root to count
   n_skills=$(find "$root/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
   n_commands=$(find "$root/commands" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
 
-  grep -Fq "$(word_for "$n_lib") helper specs" "$readme"   || bad="$bad lib($n_lib)"
-  grep -Fq "$(word_for "$n_agents") agents" "$readme"      || bad="$bad agents($n_agents)"
-  grep -Fq "$(word_for "$n_skills") skills" "$readme"      || bad="$bad skills($n_skills)"
-  grep -Fq "$(word_for "$n_commands") commands" "$readme"  || bad="$bad commands($n_commands)"
+  # FAIL CLOSED past the end of the word table. An out-of-range index makes awk
+  # print the empty string, which would turn the needle into " skills" — a
+  # substring of "four skills", so the stage would PASS while checking nothing.
+  # A tenth skill would silently disable the very check that exists to catch
+  # this kind of staleness.
+  for pair in "$n_lib:helper specs" "$n_agents:agents" "$n_skills:skills" "$n_commands:commands"; do
+    w="$(word_for "${pair%%:*}")"
+    if [ -z "$w" ]; then
+      README_COUNT_DETAIL=" ${pair##*:}(${pair%%:*} exceeds the spelled-word table — extend WORDS)"
+      return 1
+    fi
+    grep -Fq "$w ${pair##*:}" "$readme" || bad="$bad ${pair##*:}(${pair%%:*})"
+  done
 
   README_COUNT_DETAIL="$bad"
   [ -z "$bad" ]

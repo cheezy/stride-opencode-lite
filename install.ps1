@@ -85,7 +85,8 @@ function Get-Manifest {
   $out = @()
   $skillsRoot = Join-Path $Src 'skills'
   if (Test-Path $skillsRoot) {
-    Get-ChildItem -Path $skillsRoot -Recurse -File | ForEach-Object {
+    # ONE predicate, matching install.sh and the git cross-check exactly.
+    Get-ChildItem -Path $skillsRoot -Recurse -File -Filter '*.md' | ForEach-Object {
       $out += ($_.FullName.Substring($Src.Length + 1) -replace '\\', '/')
     }
   }
@@ -146,6 +147,7 @@ foreach ($dir in @('agents', 'commands', 'lib')) {
 # --- Verification, re-enumerated independently of the copy ---------------
 $missing = @()
 $differing = @()
+$emptySource = @()
 $installed = 0
 $expected = 0
 
@@ -157,7 +159,12 @@ foreach ($rel in (Get-Manifest)) {
   if (-not (Test-Path -LiteralPath $destFile -PathType Leaf)) {
     $missing += $rel
   } elseif ((Get-Item -LiteralPath $destFile).Length -eq 0) {
-    $differing += "$rel (empty)"
+    # Attribute it correctly: an empty SOURCE means the copy was perfect.
+    if ((Get-Item -LiteralPath $srcFile).Length -eq 0) {
+      $emptySource += "$rel (empty)"
+    } else {
+      $differing += "$rel (empty)"
+    }
   } elseif ((Get-FileHash -LiteralPath $srcFile).Hash -ne (Get-FileHash -LiteralPath $destFile).Hash) {
     $differing += "$rel (content differs from source)"
   } else {
@@ -196,7 +203,7 @@ foreach ($dir in @('skills', 'agents', 'commands', 'lib')) {
   }
 }
 
-if ($missing.Count -gt 0 -or $differing.Count -gt 0 -or $countDrift.Count -gt 0 -or $installed -ne $expected) {
+if ($missing.Count -gt 0 -or $differing.Count -gt 0 -or $emptySource.Count -gt 0 -or $countDrift.Count -gt 0 -or $installed -ne $expected) {
   [Console]::Error.WriteLine("install.ps1: INSTALL IS INCOMPLETE — $installed of $expected files verified at $DestRoot")
   if ($missing.Count -gt 0) {
     [Console]::Error.WriteLine("Missing after copy:")
@@ -205,6 +212,10 @@ if ($missing.Count -gt 0 -or $differing.Count -gt 0 -or $countDrift.Count -gt 0 
   if ($differing.Count -gt 0) {
     [Console]::Error.WriteLine("Corrupt after copy:")
     foreach ($d in $differing) { [Console]::Error.WriteLine("  $d") }
+  }
+  if ($emptySource.Count -gt 0) {
+    [Console]::Error.WriteLine("Empty in the source:")
+    foreach ($e in $emptySource) { [Console]::Error.WriteLine("  $e") }
   }
   if ($countDrift.Count -gt 0) {
     [Console]::Error.WriteLine("Count mismatch:")

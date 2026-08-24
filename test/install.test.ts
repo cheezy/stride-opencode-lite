@@ -190,8 +190,10 @@ describe("install.sh", () => {
     expect(stdout).not.toContain("Verified");
   });
 
-  it("fails when a source file is empty, naming it as empty", async () => {
-    // Distinct from missing: proves the check is not existence-only.
+  it("fails when a source file is empty, blaming the source and not the copy", async () => {
+    // Distinct from missing: proves the check is not existence-only. And the
+    // heading matters — the copy was byte-perfect here, so reporting it under
+    // "Corrupt after copy" would send the reader to the wrong file.
     const src = await stagedSource();
     await writeFile(join(src, "lib/slugify.md"), "");
 
@@ -199,7 +201,9 @@ describe("install.sh", () => {
 
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("INSTALL IS INCOMPLETE");
-    expect(stderr).toContain("(empty)");
+    expect(stderr).toContain("Empty in the source:");
+    expect(stderr).toContain("lib/slugify.md (empty)");
+    expect(stderr).not.toContain("Corrupt after copy:");
   });
 
   it("fails when a decisive skill did not land", async () => {
@@ -364,7 +368,7 @@ describe.skipIf(!pwshPresent)("install.ps1 under pwsh", () => {
     expect(await sameBytes(join(src, "lib/slugify.md"), edited)).toBe(true);
   }, PWSH_TIMEOUT_MS);
 
-  it("fails verification on an empty source file", async () => {
+  it("fails verification on an empty source file, with the same attribution", async () => {
     const src = await stagedSource();
     await writeFile(join(src, "lib/slugify.md"), "");
 
@@ -372,7 +376,8 @@ describe.skipIf(!pwshPresent)("install.ps1 under pwsh", () => {
 
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("INSTALL IS INCOMPLETE");
-    expect(stderr).toContain("(empty)");
+    expect(stderr).toContain("Empty in the source:");
+    expect(stderr).not.toContain("Corrupt after copy:");
   }, PWSH_TIMEOUT_MS);
 
   it("names itself, not install.sh, in its messages", async () => {
