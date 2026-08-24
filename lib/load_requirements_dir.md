@@ -70,7 +70,11 @@ load_requirements_dir() {
 
   local stripped="${dir%/}"
   local base
-  base="$(cd "$stripped" 2>/dev/null && pwd -P)" || return 0
+  base="$(cd "$stripped" 2>/dev/null && pwd -P)"
+  if [ -z "$base" ]; then
+    echo "load_requirements_dir: cannot resolve directory: $stripped" >&2
+    return 0
+  fi
   local file rel resolved
 
   # Sorted, recursive, regular files only, hidden files excluded.
@@ -83,10 +87,16 @@ load_requirements_dir() {
         # `find -L` descends into symlinked directories to arbitrary depth, so
         # this check -- not find -- is what bounds the walk. The final path
         # component is resolved too: `pwd -P` resolves the directories a file
-        # sits in, but not a symlinked file itself.
+        # sits in, but not a symlinked file itself. The 8-hop cap is
+        # deliberately below every platform's own symlink limit (measured at
+        # ~13 on macOS; conventionally 40 on Linux) so this check binds before
+        # the kernel's does. A cap above the kernel limit can never be reached
+        # -- the kernel refuses the chain first and `find -L` drops it -- and an
+        # unreachable control is an untestable one. Legitimate requirements
+        # symlinks are one or two hops.
         resolved="$file"
         local hops=0
-        while [ -L "$resolved" ] && [ "$hops" -lt 32 ]; do
+        while [ -L "$resolved" ] && [ "$hops" -lt 8 ]; do
           local target
           target="$(readlink "$resolved")"
           case "$target" in
@@ -95,6 +105,14 @@ load_requirements_dir() {
           esac
           hops=$(( hops + 1 ))
         done
+        # Fail CLOSED: an unresolved chain must be skipped, never measured.
+        # If the cap is reached while `resolved` is still a symlink, the
+        # containment check below would pass on a path still inside `dir` while
+        # `cat` follows the remaining hops out of it.
+        if [ -L "$resolved" ]; then
+          echo "load_requirements_dir: skipping (unresolved symlink chain): $rel" >&2
+          continue
+        fi
         resolved="$(cd "$(dirname "$resolved")" 2>/dev/null && pwd -P)/$(basename "$resolved")"
         case "$resolved" in
           "$base"/*) ;;
@@ -123,7 +141,7 @@ load_requirements_dir() {
         fi
 
         printf '=== %s ===\n\n' "$rel"
-        cat "$file"
+        cat "$resolved"
         # Ensure trailing newline.
         if [ -n "$(tail -c 1 "$file" 2>/dev/null)" ]; then
           printf '\n'
@@ -190,11 +208,12 @@ stderr: `load_requirements_dir: skipping (binary): diagram.png`
 
 ## Edge cases
 
+- **Unreadable or non-traversable directory** — empty stdout, `"load_requirements_dir: cannot resolve directory: <dir>"` on stderr, exit 0. Like every other skip in this helper, it is logged rather than silent.
 - **Missing directory** — empty stdout, log to stderr, exit 0. The non-fatal contract is deliberate; surface skills must work on fresh projects.
 - **Empty directory** — empty stdout, no log, exit 0.
 - **Symlink as the directory itself** — followed (`find -L` follows the top-level symlink), and `dir` is resolved first so everything beneath it is measured against the resolved root.
 - **Symlink pointing outside `dir`** — skipped, whether it is a file or a directory, with `"load_requirements_dir: skipping (outside dir): <rel>"` on stderr. This is the containment control: the directory names a read scope, and a symlink must not widen it.
-- **Symlink chains** — followed up to 32 hops while resolving, then measured against the resolved root. The hop cap bounds a symlink loop; an unresolved chain simply fails the containment check and is skipped.
+- **Symlink chains** — followed up to 8 hops while resolving. The cap sits below every platform's own symlink limit (measured at ~13 on macOS, conventionally 40 on Linux) so it binds before the kernel's does; a cap above that limit could never be reached, because the kernel refuses the chain and `find -L` drops it first, and an unreachable control cannot be relied on. A chain still unresolved at the cap is **skipped outright** with `"load_requirements_dir: skipping (unresolved symlink chain): <rel>"` on stderr — it is never measured against the root, because a partially-resolved path can still sit inside `dir` while the kernel follows the remaining hops out of it. The cap therefore fails closed, and it bounds symlink loops by the same rule.
 - **File without trailing newline** — the helper emits a synthetic newline before the blank separator so the next header is line-aligned.
 - **Permission denied on a file** — `cat` writes an error to stderr; the helper continues with the next file. Acceptable: the user is informed via stderr without aborting the whole context build.
 - **Concurrent modification of `dir` during the walk** — best-effort. Files added during the walk may or may not be picked up; files removed mid-walk may produce a transient `cat` error. Surface skills do not require atomicity for this read.

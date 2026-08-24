@@ -202,9 +202,24 @@ This port therefore:
   block called out as untrusted data.
 
 **stride-lite carries the same defect and should be fixed at the source, after
-which this file and the byte-identity check should be reconciled.** Until then,
-a diff of this file against stride-lite's shows these changes and they are
-expected. The other three helper specs remain faithful ports.
+which this file and the byte-identity check should be reconciled.**
+
+**Scoping the byte-identity exemption.** Do **not** blanket-exempt this file —
+that would silently accept any future unintended drift in the one helper that is
+now security-relevant. Exempt exactly these regions, and require byte-identity
+for the rest of the file:
+
+- the symlink bullet in **File selection rules**;
+- the two symlink bullets and the unreadable-directory bullet in **Edge cases**;
+- output-format rule 2 and the two `===`-marker pitfalls;
+- the containment block and the resolved-base lines inside the **reference
+  implementation**.
+
+`test/load_requirements_dir.spec.test.ts` pins the behaviour those regions
+describe, by extracting and running the spec's own bash. It is the check that
+covers what byte-identity no longer can, and it is where a regression in this
+control surfaces. The other three helper specs remain faithful ports and are
+fully in scope for byte-identity.
 
 ### What was deliberately not ported
 
