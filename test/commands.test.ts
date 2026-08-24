@@ -124,14 +124,70 @@ describe.each(Object.keys(COMMANDS))("%s", (name) => {
     for (const line of body.split("\n")) {
       expect(line).not.toMatch(/^\s*(mkdir|printf|echo|cat|sed|awk|tr|git|curl|mv|cp)\s/);
     }
+
+    // Both signals above are fence-shaped, so prose-form orchestration would
+    // slip past them: "Lowercase the title and write it to <path>" is a step
+    // this file performs, in a sentence. An imperative addressed TO THIS FILE
+    // reads differently from prose describing the skill ("The skill walks…",
+    // "`lib/slugify` — normalise the title"), so match the imperative mood at
+    // line start.
+    for (const line of body.split("\n")) {
+      expect(line).not.toMatch(/^\s*(Write|Create|Slugify|Lowercase|Replace|Resolve|Render) the /);
+    }
+  });
+
+  it("has a thin-shell check that goes red on orchestration", async () => {
+    // The strongest new assertion above was the only one without a mutation
+    // proof. Run its predicates against deliberately-orchestrating bodies so a
+    // later loosening of them shows up here rather than passing quietly.
+    const body = bodyOnly(await readCommand(name));
+    const holds = (candidate: string): boolean => {
+      const doing = candidate.split("## What this command does NOT do")[0]!;
+      if (/```\w+/.test(doing)) return false;
+      for (const line of doing.split("\n")) {
+        if (/^\s*(mkdir|printf|echo|cat|sed|awk|tr|git|curl|mv|cp)\s/.test(line)) return false;
+        if (/^\s*(Write|Create|Slugify|Lowercase|Replace|Resolve|Render) the /.test(line)) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    expect(holds(body)).toBe(true);
+    for (const injected of [
+      "\n```bash\nmkdir -p \"$OUTPUT_DIR\"\n```\n",
+      "\nprintf '%s' \"$SLUG\" > out.md\n",
+      "\nSlugify the title, then write it to docs/implementation/PENDING/tasks/<slug>.md.\n",
+      "\nWrite the rendered markdown to the resolved path.\n",
+    ]) {
+      // Injected BEFORE the does-NOT block: appending after it would land
+      // outside the region the check reads, and would prove nothing.
+      const [doing, notDoing] = [
+        body.split("## What this command does NOT do")[0]!,
+        body.slice(body.indexOf("## What this command does NOT do")),
+      ];
+
+      expect(holds(doing + injected + notDoing)).toBe(false);
+    }
   });
 
   it("keeps its step prose count-agnostic", async () => {
     // A stated count goes stale the first time the skill gains or loses a step.
     const body = bodyOnly(await readCommand(name));
 
-    expect(body).not.toMatch(/all (three|four|five|six|seven|eight|nine) flow steps/i);
-    expect(body).not.toMatch(/the (three|four|five|six|seven|eight|nine)-step/i);
+    // Digits, words and the bare noun in one pattern. Word-spelled-only
+    // negatives let "all 7 flow steps" and "its seven steps" through, which is
+    // the natural regression now that the files carry literal numbered lists.
+    // The list's own "1." markers are excluded — they are the list, not a claim
+    // about its length.
+    const prose = body
+      .split("\n")
+      .filter((line) => !/^\d+\. /.test(line))
+      .join("\n");
+
+    expect(prose).not.toMatch(
+      /\b(\d+|one|two|three|four|five|six|seven|eight|nine)[- ](flow )?steps?\b/i,
+    );
     expect(body).toContain("every flow step documented in");
   });
 
@@ -194,7 +250,11 @@ describe("the init command", () => {
   it("documents the force flag", async () => {
     const source = await readCommand("init");
 
+    // Against the body as well as the whole file: the frontmatter description
+    // already names --force, so a whole-file check alone would stand while the
+    // body lost the flag entirely.
     expect(source).toContain("--force");
+    expect(bodyOnly(source)).toContain("--force");
     expect(bodyOnly(source)).toContain("overwrite an existing");
   });
 
@@ -219,8 +279,12 @@ describe("README", () => {
     const readme = await Bun.file(join(repoRoot, "README.md")).text();
 
     expect(readme).toContain("## Commands");
+    // Scoped to the section. Over the whole README, `toContain("init")` matches
+    // "initial", "initialise" and any prose elsewhere, so it credits a command
+    // the section never documents.
+    const section = readme.split("## Commands")[1]!.split(/^## /m)[0]!;
     for (const name of Object.keys(COMMANDS)) {
-      expect(readme).toContain(name);
+      expect(section).toContain(name);
     }
     // A table row is not an example; require an invocation line per command.
     expect(readme).toMatch(/^create-goal /m);
@@ -263,7 +327,9 @@ describe("README", () => {
   it("no longer claims the commands are unported", async () => {
     const readme = await Bun.file(join(repoRoot, "README.md")).text();
 
-    expect(readme).not.toContain("commands\n> are not yet ported");
+    // One assertion, not two: the earlier `not.toContain("commands\n> are not
+    // yet ported")` was strictly subsumed by this one and could never fail on
+    // its own.
     expect(readme).not.toContain("are not yet ported");
   });
 });

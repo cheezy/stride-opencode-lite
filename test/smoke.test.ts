@@ -100,7 +100,8 @@ describe("test/smoke.sh", () => {
       "workflow: the terminal-move carve-out is granted and scoped",
       "commands: every activated skill name resolves to a skill on disk",
       "commands: the create commands' defaults match the lib/parse_args spec",
-      "commands: both command checks detect a mutation (negative control)",
+      "commands: each flow list has one entry per step in the skill it activates",
+      "commands: every command check detects a mutation (negative control)",
       "Command-file assertions pass",
     ]) {
       expect(stdout).toContain(`PASS  ${label}`);
@@ -169,6 +170,22 @@ describe("test/smoke.sh", () => {
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("FAIL  commands: every activated skill name resolves to a skill on disk");
     expect(stderr).toContain("FAIL  Command-file assertions pass");
+  });
+
+  it("fails when a command's flow list drifts from its skill's step count", async () => {
+    // This is the check that would have caught a restored step list being lost
+    // to a working-copy checkout, which is how it actually went missing.
+    const commands = await treeCopy("commands");
+    const target = join(commands, "create-goal.md");
+    const source = await Bun.file(target).text();
+    await Bun.write(target, source.replace(/^8\. .*\n/m, ""));
+
+    const { stderr, exitCode } = await run({ STRIDE_SMOKE_COMMANDS_DIR: commands });
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain(
+      "FAIL  commands: each flow list has one entry per step in the skill it activates",
+    );
   });
 
   it("fails when a command's default drifts from the lib/parse_args spec", async () => {

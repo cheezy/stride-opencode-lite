@@ -587,7 +587,30 @@ else
   nope "commands: the create commands' defaults match the lib/parse_args spec" "drifted:$drift"
 fi
 
-# 3. Negative control. Both checks above must be able to go red, or a later
+# 3. Each command's enumerated flow list must have one entry per `### Step` in
+#    the skill it activates. This is what catches a command whose list was
+#    dropped or went stale — the drift stride-lite already had to fix once, and
+#    the drift a checked-out working copy silently reintroduced here.
+listdrift=""
+for cmd in "$COMMANDS_DIR"/*.md; do
+  named="$(sed -n 's/.*Activate the `\([a-z0-9-]*\)` skill.*/\1/p' "$cmd" | head -1)"
+  [ -d "$SKILLS_DIR/$named" ] || continue
+  want="$(grep -c '^### Step' "$SKILLS_DIR/$named/SKILL.md")"
+  got="$(grep -c '^[0-9]\+\. ' "$cmd")"
+  if [ "$got" -eq 0 ]; then
+    listdrift="$listdrift $(basename "$cmd"):no-list(skill-has-$want)"
+  elif [ "$got" -ne "$want" ]; then
+    listdrift="$listdrift $(basename "$cmd"):$got-vs-$want"
+  fi
+done
+if [ -z "$listdrift" ]; then
+  ok "commands: each flow list has one entry per step in the skill it activates"
+else
+  commands_ok=0
+  nope "commands: each flow list has one entry per step in the skill it activates" "drifted:$listdrift"
+fi
+
+# 4. Negative control. All checks above must be able to go red, or a later
 #    refactor that quietly disables them would read as green.
 CTRL="$WORK/commands_ctrl"
 mkdir -p "$CTRL"
@@ -595,16 +618,22 @@ cp "$COMMANDS_DIR"/*.md "$CTRL/"
 sed -i.bak 's/Activate the `stride-opencode-lite-init` skill/Activate the `stride-opencode-lite-no-such-skill` skill/' "$CTRL/init.md"
 sed -i.bak 's/^| `--output-dir` | `docs\/implementation\/PENDING` |/| `--output-dir` | `docs\/elsewhere` |/' "$CTRL/create-task.md"
 rm -f "$CTRL"/*.bak
+sed -i.bak '/^3\. Dispatch `@create-decomposer`/d' "$CTRL/create-goal.md"
+rm -f "$CTRL"/*.bak
 ctrl_skill=0
 ctrl_default=0
+ctrl_list=0
 [ -d "$SKILLS_DIR/$(sed -n 's/.*Activate the `\([a-z0-9-]*\)` skill.*/\1/p' "$CTRL/init.md" | head -1)" ] || ctrl_skill=1
 grep -Fq '| `--output-dir` | `docs/implementation/PENDING` |' "$CTRL/create-task.md" || ctrl_default=1
-if [ "$ctrl_skill" -eq 1 ] && [ "$ctrl_default" -eq 1 ]; then
-  ok "commands: both command checks detect a mutation (negative control)"
+ctrl_want="$(grep -c '^### Step' "$SKILLS_DIR/stride-opencode-lite-create-goal/SKILL.md")"
+ctrl_got="$(grep -c '^[0-9]\+\. ' "$CTRL/create-goal.md")"
+[ "$ctrl_got" -ne "$ctrl_want" ] && ctrl_list=1
+if [ "$ctrl_skill" -eq 1 ] && [ "$ctrl_default" -eq 1 ] && [ "$ctrl_list" -eq 1 ]; then
+  ok "commands: every command check detects a mutation (negative control)"
 else
   commands_ok=0
-  nope "commands: both command checks detect a mutation (negative control)" \
-       "skill-rename detected=$ctrl_skill, default-drift detected=$ctrl_default"
+  nope "commands: every command check detects a mutation (negative control)" \
+       "skill-rename detected=$ctrl_skill, default-drift detected=$ctrl_default, list-drift detected=$ctrl_list"
 fi
 
 if [ "$commands_ok" -eq 1 ]; then
