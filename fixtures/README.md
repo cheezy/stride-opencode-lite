@@ -17,6 +17,14 @@ on-disk artifacts.
 | `sample-requirements.md` | `0a6cd5605c149a3b3021600b5745d5826bc18ef1dc729ee133f7c3994e3d933d` | 2032 |
 | `expected-output/goal.md` | `00ae81dc1a6907d97c0ce37712fce58b096756100fc55fffd7a095cc83b4de55` | 2644 |
 | `expected-output/task1.md` | `141afe6f06ca27f240631357fee077aa0a9160025297ad242dbb4bbbfc9b9a97` | 4541 |
+| `templates/goal.md.tpl` | `63b444f8cb7c84b0a2d8ec39ceafc8e7d74c8e80433f530e5adf7168b4273234` | 33 lines |
+| `templates/taskN.md.tpl` | `f5ff7db2802fbe5c9ac4d8ffafddc45ea09bdbca55541aed02f54552567cfedd` | 81 lines |
+
+`templates/` holds the two template blocks extracted verbatim from stride-lite's
+`create-goal` SKILL.md. They are not decoration: they are what lets a template
+failure print a real `diff -u` **offline**, which is the only case a consumer
+ever has. A sha256 mismatch on its own says something changed without saying
+what.
 
 Copied with a plain `cp` and **no normalization of any kind**. All three end with
 a single trailing newline and contain no CR bytes; a newline or line-ending
@@ -43,9 +51,17 @@ version of the cross-port promise is being asserted. The commit is what lets a
 future reader answer "does this still hold today, or did it hold once?"
 
 To re-vendor after an upstream change, copy the files again, update the commit
-and the hashes in this table together, and update `EXPECTED_FIXTURE_*_SHA256` in
-`test/smoke.sh`. Updating one without the others is the failure mode this table
-exists to make visible.
+and the hashes in this table together, and update these constants in
+`test/smoke.sh`: `EXPECTED_SAMPLE_SHA256`, `EXPECTED_GOAL_FIXTURE_SHA256`,
+`EXPECTED_TASK1_FIXTURE_SHA256`, `EXPECTED_GOAL_TEMPLATE_SHA256`,
+`EXPECTED_TASKN_SHA256` and `EXPECTED_STRIDE_LITE_COMMIT`. Updating one without
+the others is the failure mode this table exists to make visible — and the
+`fixtures: README.md pins the same hashes and paths the check does` stage fails
+when they drift apart.
+
+A re-vendor is a **cross-port decision**, not a local fix: `stride-lite`,
+`stride-copilot-lite` and this port land it together. If you are updating a hash
+to make a test pass, stop.
 
 ## What these files are — and are NOT
 

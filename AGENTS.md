@@ -387,6 +387,19 @@ command. Both stages have negative controls, in-script and in the wrapper.
 - **The manual test is owed.** No live OpenCode session was available, so nothing
   here establishes that these skills load, that the activation descriptions route
   the intended prompts, or that create-goal and create-task do not collide.
+- **The byte-identity promise is unconfirmed against a live run.** The checks
+  establish that the templates and artifacts are the same bytes across ports, not
+  that these skills, driven by a model, emit those bytes. That needs a real
+  create-goal run, and no OpenCode session exists to make one.
+- **The bidirectional interoperability test has not been run.** Driving a goal
+  directory created by stride-lite through this port's workflow, and one created
+  here through stride-lite's, is what would show the promise holds in practice.
+  The fixtures assert it; nothing has exercised it.
+- **A fixture that is byte-identical but semantically stale is undetectable
+  here.** If both ports drift together, every pin still passes. No offline check
+  can see this — it needs a human noticing the corpus no longer reflects what the
+  skills produce. Recorded rather than papered over with a check that cannot
+  work.
 - `select_workflow_branch.md`, `task-enricher` and `hook-diagnostician` remain
   unported, and **no ported skill dispatches them**. The workflow skill references
   them only as unported: Step 1a performs the sparse check itself and routes a

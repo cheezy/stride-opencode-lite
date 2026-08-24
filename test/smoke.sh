@@ -38,6 +38,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 SKILLS_DIR="${STRIDE_SMOKE_SKILLS_DIR:-$REPO_ROOT/skills}"
 COMMANDS_DIR="${STRIDE_SMOKE_COMMANDS_DIR:-$REPO_ROOT/commands}"
 FIXTURES_DIR="${STRIDE_SMOKE_FIXTURES_DIR:-$REPO_ROOT/fixtures}"
+# The two template blocks, vendored from stride-lite alongside the artifacts.
+# These make the offline failure a real diff rather than two hashes: a sha
+# mismatch says something changed without saying what, and a consumer never has
+# stride-lite on disk, so offline IS their case.
+VENDORED_GOAL_TPL="$FIXTURES_DIR/templates/goal.md.tpl"
+VENDORED_TASKN_TPL="$FIXTURES_DIR/templates/taskN.md.tpl"
 STRIDE_LITE_ROOT="${STRIDE_LITE_ROOT:-$REPO_ROOT/../stride-lite}"
 
 # The stride-lite taskN template, pinned. This is the assertion that survives
@@ -184,7 +190,8 @@ if [ "$PARITY_CREDITED" -eq 1 ]; then
     ok "both taskN templates match the stride-lite source hash"
   else
     nope "both taskN templates match the stride-lite source hash" \
-         "expected $EXPECTED_TASKN_SHA256"
+         "$(if [ -r "$VENDORED_TASKN_TPL" ]; then diff -u "$VENDORED_TASKN_TPL" "$WORK/goal.txt" | head -20; fi)
+expected $EXPECTED_TASKN_SHA256"
   fi
 else
   skipped "both taskN templates match the stride-lite source hash" "parity not credited"
@@ -198,7 +205,8 @@ if [ -r "$STRIDE_LITE_SKILL" ] && [ "$PARITY_CREDITED" -eq 1 ]; then
     ok "taskN template matches stride-lite's copy on disk"
   else
     nope "taskN template matches stride-lite's copy on disk" \
-         "upstream diverged, or upstream extraction was empty"
+         "$(diff -u "$WORK/upstream.txt" "$WORK/goal.txt" | head -20)
+upstream diverged, or upstream extraction was empty"
   fi
 else
   skipped "stride-lite cross-check" "STRIDE_LITE_ROOT not found"
@@ -304,16 +312,14 @@ if [ "$GOAL_TPL_CREDITED" -eq 1 ]; then
   if matches_goal_template_hash "$WORK/gt_a.txt"; then
     ok "the goal.md template matches the stride-lite source hash"
   else
-    # "Shows the diff" is a requirement, not decoration: a bare hash mismatch
-    # says something changed without saying what. Diff against upstream when it
-    # is on disk; otherwise show the section spine, which is what a structural
-    # edit moves.
-    UPSTREAM_GOAL_SKILL="$STRIDE_LITE_ROOT/skills/stride-lite-create-goal/SKILL.md"
-    if [ -r "$UPSTREAM_GOAL_SKILL" ]; then
-      extract_goal_a "$UPSTREAM_GOAL_SKILL" > "$WORK/gt_upstream.txt" 2>/dev/null
-      GOAL_DIFF="$(diff -u "$WORK/gt_upstream.txt" "$WORK/gt_a.txt" | head -20)"
+    # "Shows the diff" is a requirement, not decoration. Diff against the
+    # VENDORED template, which is always on disk — the earlier version fell back
+    # to printing the current file's own heading spine when stride-lite was
+    # absent, which showed nothing at all for a non-heading edit.
+    if [ -r "$VENDORED_GOAL_TPL" ]; then
+      GOAL_DIFF="$(diff -u "$VENDORED_GOAL_TPL" "$WORK/gt_a.txt" | head -20)"
     else
-      GOAL_DIFF="$(grep -n '^#' "$WORK/gt_a.txt")"
+      GOAL_DIFF="fixtures/templates/goal.md.tpl is missing — see the fixture FAIL above"
     fi
     nope "the goal.md template matches the stride-lite source hash" \
          "expected $EXPECTED_GOAL_TEMPLATE_SHA256, got $(shasum -a 256 "$WORK/gt_a.txt" | cut -d' ' -f1)
@@ -693,7 +699,7 @@ EXPECTED_GOAL_FIXTURE_SHA256=00ae81dc1a6907d97c0ce37712fce58b096756100fc55fffd7a
 EXPECTED_TASK1_FIXTURE_SHA256=141afe6f06ca27f240631357fee077aa0a9160025297ad242dbb4bbbfc9b9a97
 EXPECTED_STRIDE_LITE_COMMIT=ffb670bbc29096916d0111ca64944e0c92f968ee
 
-FIXTURE_FILES="README.md expected-output/goal.md expected-output/task1.md sample-requirements.md"
+FIXTURE_FILES="README.md expected-output/goal.md expected-output/task1.md sample-requirements.md templates/goal.md.tpl templates/taskN.md.tpl"
 
 # An absent, unreadable, empty or symlinked fixture is a failure — never a skip.
 require_fixture() {
@@ -766,8 +772,14 @@ if [ "$FIXTURES_CREDITED" -eq 1 ]; then
   for want in "$EXPECTED_SAMPLE_SHA256" "$EXPECTED_GOAL_FIXTURE_SHA256" "$EXPECTED_TASK1_FIXTURE_SHA256"; do
     grep -Fq "$want" "$FIXTURES_DIR/README.md" || readme_gap="$readme_gap $want"
   done
-  for rel in sample-requirements.md expected-output/goal.md expected-output/task1.md; do
+  for rel in sample-requirements.md expected-output/goal.md expected-output/task1.md \
+             templates/goal.md.tpl templates/taskN.md.tpl; do
     grep -Fq "$rel" "$FIXTURES_DIR/README.md" || readme_gap="$readme_gap $rel"
+  done
+  # The re-vendor procedure names the constants to update; a stale name there
+  # sends the next person looking for a variable that does not exist.
+  for var in EXPECTED_SAMPLE_SHA256 EXPECTED_GOAL_FIXTURE_SHA256 EXPECTED_TASK1_FIXTURE_SHA256; do
+    grep -Fq "$var" "$FIXTURES_DIR/README.md" || readme_gap="$readme_gap $var"
   done
   if [ -z "$readme_gap" ]; then
     ok "fixtures: README.md pins the same hashes and paths the check does"
@@ -833,6 +845,37 @@ if [ "$FIXTURES_CREDITED" -eq 1 ]; then
     skipped "fixtures: the conformance check detects a renamed heading (negative control)" "template extraction not credited"
   fi
 
+  # The recorded commit must RESOLVE, and the comparison must be against that
+  # commit's content. Grepping the sha out of the README only proves the README
+  # contains a string; diffing the working tree can pass green against an
+  # arbitrary later commit while the README still claims ffb670b.
+  if [ -d "$STRIDE_LITE_ROOT/.git" ] || git -C "$STRIDE_LITE_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! git -C "$STRIDE_LITE_ROOT" cat-file -e "$EXPECTED_STRIDE_LITE_COMMIT^{commit}" 2>/dev/null; then
+      nope "fixtures: the recorded stride-lite commit resolves in that repository" \
+           "$EXPECTED_STRIDE_LITE_COMMIT is not a commit in $STRIDE_LITE_ROOT"
+    else
+      commitdrift=""
+      for rel in sample-requirements.md expected-output/goal.md expected-output/task1.md; do
+        if ! git -C "$STRIDE_LITE_ROOT" cat-file -e "$EXPECTED_STRIDE_LITE_COMMIT:fixtures/$rel" 2>/dev/null; then
+          commitdrift="$commitdrift
+  fixtures/$rel absent at $EXPECTED_STRIDE_LITE_COMMIT"
+        else
+          git -C "$STRIDE_LITE_ROOT" show "$EXPECTED_STRIDE_LITE_COMMIT:fixtures/$rel" > "$WORK/at_commit.md" 2>/dev/null
+          diff -q "$FIXTURES_DIR/$rel" "$WORK/at_commit.md" >/dev/null || commitdrift="$commitdrift
+$(diff -u "$WORK/at_commit.md" "$FIXTURES_DIR/$rel" | head -20)"
+        fi
+      done
+      if [ -z "$commitdrift" ]; then
+        ok "fixtures: the recorded stride-lite commit resolves in that repository"
+      else
+        nope "fixtures: the recorded stride-lite commit resolves in that repository" "$commitdrift"
+      fi
+    fi
+  else
+    skipped "fixtures: the recorded stride-lite commit resolves in that repository" \
+            "STRIDE_LITE_ROOT is not a git repository"
+  fi
+
   # Live cross-check. SKIPs when stride-lite is absent; FAILS when it is present
   # but a path under it is missing — see the rule at the top of this section.
   if [ -d "$STRIDE_LITE_ROOT/fixtures" ]; then
@@ -863,6 +906,7 @@ else
              "fixtures: task1.md carries the taskN template's headings, in order" \
              "fixtures: goal.md carries the goal template's headings, in order" \
              "fixtures: the conformance check detects a renamed heading (negative control)" \
+             "fixtures: the recorded stride-lite commit resolves in that repository" \
              "fixtures: the vendored copies match stride-lite's files on disk"; do
     skipped "$lbl" "a vendored fixture is missing or unusable — see the FAIL above"
   done
@@ -879,6 +923,11 @@ elif require_fixture "$WORK/definitely-absent.md"; then
 elif require_fixture "/dev/null"; then
   nope "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)" \
        "require_fixture accepted an empty file"
+elif ln -sf "$FIXTURES_DIR/README.md" "$WORK/link.md" && require_fixture "$WORK/link.md"; then
+  # A symlink reads bytes from outside the tree, so the branch that rejects one
+  # is load-bearing — and it was previously exercised by nothing.
+  nope "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)" \
+       "require_fixture accepted a symlink"
 else
   ok "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)"
 fi

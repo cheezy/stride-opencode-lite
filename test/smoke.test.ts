@@ -114,6 +114,7 @@ describe("test/smoke.sh", () => {
       "fixtures: goal.md carries the goal template's headings, in order",
       "fixtures: the conformance check detects a renamed heading (negative control)",
       "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)",
+      "fixtures: the recorded stride-lite commit resolves in that repository",
       "commands: every activated skill name resolves to a skill on disk",
       "commands: the create commands' defaults match the lib/parse_args spec",
       "commands: each flow list has one entry per step in the skill it activates",
@@ -330,6 +331,48 @@ describe("test/smoke.sh", () => {
     expect(stderr).toContain("FAIL  the goal.md template matches the stride-lite source hash");
     expect(stderr).toContain("FAIL  fixtures: goal.md carries the goal template's headings, in order");
     expect(stderr).toMatch(/^[-+]## Task/m);
+  });
+
+  it("shows a real diff for a non-heading template change, offline", async () => {
+    // The consumer's case: stride-lite is never on disk for them. An earlier
+    // version fell back to printing the current file's own heading spine, which
+    // showed nothing at all when the changed byte was not in a heading.
+    const skills = await skillsCopy();
+    const target = join(skills, "stride-opencode-lite-create-goal/SKILL.md");
+    const source = await Bun.file(target).text();
+    const mutated = source.replace("<goal.why>", "<goal.wh>");
+    expect(mutated).not.toBe(source);
+    await Bun.write(target, mutated);
+
+    const { stderr, exitCode } = await run({
+      STRIDE_SMOKE_SKILLS_DIR: skills,
+      STRIDE_LITE_ROOT: "/nonexistent/stride-lite",
+    });
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("FAIL  the goal.md template matches the stride-lite source hash");
+    // A real diff of the changed line, not a hash pair and not a spine dump.
+    expect(stderr).toMatch(/^-<goal\.why>/m);
+    expect(stderr).toMatch(/^\+<goal\.wh>/m);
+  });
+
+  it("fails when fixtures/README.md names a commit that does not resolve", async () => {
+    // Grepping the sha out of the README only proves the README contains a
+    // string. This stage requires it to be a real commit in that repository.
+    const fixtures = await treeCopy("fixtures");
+    const readme = join(fixtures, "README.md");
+    await Bun.write(
+      readme,
+      (await Bun.file(readme).text()).replaceAll(
+        "ffb670bbc29096916d0111ca64944e0c92f968ee",
+        "1".repeat(40),
+      ),
+    );
+
+    const { stderr, exitCode } = await run({ STRIDE_SMOKE_FIXTURES_DIR: fixtures });
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("FAIL  fixtures: README.md records the stride-lite source commit");
   });
 
   it("SKIPS the stride-lite cross-check when stride-lite is absent, never passes it", async () => {
