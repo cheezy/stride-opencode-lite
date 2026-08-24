@@ -488,16 +488,25 @@ fi
 # quietly dropped. It now asserts the workflow both arms and clears the marker.
 if [ -s "$WORKFLOW" ]; then
   writes="$(grep -c 'stride-opencode-lite/\.orchestrator_active' "$WORKFLOW")"
-  clears="$(grep -c 'Clear the activation marker' "$WORKFLOW")"
+  clears="$(grep -ci 'clear the activation marker' "$WORKFLOW")"
+  # A count threshold cannot tell WHICH stop lost its clear, and the one that
+  # matters most is the ordinary successful exit: leaving the marker armed after
+  # a clean run means the next unrelated tool call fires the user's hooks. Pin
+  # that path and the normative rule by name, not by counting.
+  clean_exit=0
+  grep -q 'Clear the activation marker — `rm -f .stride-opencode-lite/.orchestrator_active`' "$WORKFLOW" && clean_exit=1
+  every_exit=0
+  grep -q 'EVERY exit clears the marker' "$WORKFLOW" && every_exit=1
   # Distinct from the full plugin's path and variable — a project may have both.
   collides=0
   grep -qE '(^|[^-])\.stride/\.orchestrator_active' "$WORKFLOW" && collides=1
   grep -q 'STRIDE_ALLOW_DIRECT' "$WORKFLOW" && collides=1
-  if [ "$writes" -ge 2 ] && [ "$clears" -ge 3 ] && [ "$collides" -eq 0 ]; then
+  if [ "$writes" -ge 2 ] && [ "$clears" -ge 8 ] && [ "$clean_exit" -eq 1 ] \
+     && [ "$every_exit" -eq 1 ] && [ "$collides" -eq 0 ]; then
     ok "workflow: the activation marker is written at Step 0 and cleared on every stop"
   else
     nope "workflow: the activation marker is written at Step 0 and cleared on every stop" \
-         "$writes path reference(s), $clears clear instruction(s), collides-with-full-plugin=$collides"
+         "$writes path reference(s), $clears clear instruction(s), clean-exit-clear=$clean_exit, every-exit-rule=$every_exit, collides-with-full-plugin=$collides"
   fi
 
   if grep -q 'coordination, not security' "$WORKFLOW" && grep -q 'fails open' "$WORKFLOW"; then
