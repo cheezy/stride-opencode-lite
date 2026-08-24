@@ -353,8 +353,12 @@ describe("README", () => {
     // phrasing nobody thought of walked straight past it. Inverting it turns
     // the question from "which verbs count as a claim" into "which sentences
     // did someone consciously vouch for".
+    // Exactly one entry, and it is load-bearing: removing it turns the suite
+    // red. A second entry was dropped after review showed the chunk it exempted
+    // already carried a negation of its own — a surplus exemption is a large
+    // free pass, since the splitter breaks only on period-plus-whitespace and
+    // that chunk spanned two code fences.
     const ALLOWED_WITHOUT_NEGATION = [
-      "On Windows, or anywhere with PowerShell:",
       // States what WAS verified, under pwsh on macOS. Its negation lives in
       // the sentence after it, which this list deliberately does not merge —
       // each entry is a sentence someone consciously vouched for.
@@ -390,13 +394,33 @@ describe("README", () => {
     // And no sentence may pair those subjects with an active verb saying they
     // run. A three-preposition list was narrower than the shape it replaced:
     // "fires for each agent dispatch" and "execute normally" both slipped past.
-    // The negative lookahead is load-bearing: without it this fires on the
-    // honest "`before_task` and `after_task` do not fire", since "fire" is in
-    // it. What must not appear is the subject reaching an active verb with no
-    // negation in between.
-    expect(readme).not.toMatch(
-      /(before_task|after_task|blocking (hook )?triggers?)((?!\b(not|never|no|dormant|cannot)\b)[^.]){0,80}?\b(fires?|firing|executes?|runs?|active|enabled)\b/i,
-    );
+    // INVERTED, like the Windows check above, for the same reason. A lookahead
+    // over a span cannot tell a negation that negates the CLAIM from one that
+    // merely sits inside it, and tightening the window makes it MORE permissive
+    // — a longer interposed clause pushes the verb out of range, so nothing
+    // matches and the test passes. Wrong direction entirely.
+    //
+    // So: every chunk naming these subjects must be one someone vouched for.
+    // A new sentence about them fails until it is added here deliberately.
+    const VOUCHED_TRIGGER_TEXT = [
+      // The status banner's dormancy statement.
+      "dormant on today's build",
+      // The skills table, which names the skills rather than the triggers.
+      "| `stride-opencode-lite-create-goal` |",
+      // The .stride_lite.md example, where these are section headings.
+      "````markdown",
+      // The hook trigger table itself.
+      "| Section | OpenCode event | Trigger | Blocking |",
+    ];
+
+    const triggerChunks = readme
+      .split(/(?<=\.)\s+/)
+      .filter((chunk) => /\b(before_task|after_task|blocking (hook )?triggers?)\b/i.test(chunk));
+
+    expect(triggerChunks.length).toBeGreaterThan(0);
+    for (const chunk of triggerChunks) {
+      expect(VOUCHED_TRIGGER_TEXT.some((ok) => chunk.includes(ok))).toBe(true);
+    }
   });
 
   it("states the security model without overstating it", async () => {

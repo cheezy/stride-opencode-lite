@@ -103,6 +103,27 @@ function Get-Manifest {
 
 $manifest = Get-Manifest
 
+# --- The manifest predicate must stay vacuous ----------------------------
+# One predicate governs the preflight, the copy and the verification, so
+# anything it does not match is neither installed nor reported — "broken but
+# green". Introducing such a file must be deliberate, not a silent loss.
+$unmatched = @()
+$skillsRootCheck = Join-Path $Src 'skills'
+if (Test-Path $skillsRootCheck) {
+  Get-ChildItem -Path $skillsRootCheck -Recurse -File |
+    Where-Object { $_.Extension -ne '.md' } |
+    ForEach-Object { $unmatched += ($_.FullName.Substring($Src.Length + 1) -replace '\\', '/') }
+}
+if ($unmatched.Count -gt 0) {
+  [Console]::Error.WriteLine("install.ps1: these files are inside a skill but are not .md, so the")
+  [Console]::Error.WriteLine("manifest does not match them — they would NOT be installed, and no check")
+  [Console]::Error.WriteLine("would report it:")
+  foreach ($u in $unmatched) { [Console]::Error.WriteLine("  $u") }
+  [Console]::Error.WriteLine("")
+  [Console]::Error.WriteLine("Widen the manifest predicate deliberately if a skill needs to ship them.")
+  exit 1
+}
+
 # --- Clobber preflight, per PATH and BEFORE any write --------------------
 $collisions = @()
 foreach ($rel in $manifest) {
@@ -140,10 +161,16 @@ if ($Force) {
 # Copy-Item only. NEVER Get-Content | Set-Content: that round-trip re-encodes and
 # would add a BOM under Windows PowerShell 5.1, breaking the byte-identity
 # promise this repository pins with sha256.
+$lastDir = ''
 foreach ($rel in $manifest) {
   $native   = $rel -replace '/', [IO.Path]::DirectorySeparatorChar
   $destFile = Join-Path $DestRoot $native
-  $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destFile)
+  $parent   = Split-Path -Parent $destFile
+  # One New-Item per directory rather than per file.
+  if ($parent -ne $lastDir) {
+    $null = New-Item -ItemType Directory -Force -Path $parent
+    $lastDir = $parent
+  }
   Copy-Item -LiteralPath (Join-Path $Src $native) -Destination $destFile -Force
 }
 

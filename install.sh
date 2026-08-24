@@ -101,6 +101,22 @@ skill_dirs() {
   ( cd "$SRC/skills" && find . -mindepth 1 -maxdepth 1 -type d -print | sed 's|^\./||' )
 }
 
+# --- The manifest predicate must stay vacuous ----------------------------
+# One predicate governs the preflight, the copy and the verification — which
+# means anything it does not match is not installed AND not reported. That is
+# "broken but green", strictly worse than the "installed but unverified" it
+# replaced. Nothing in the tree trips this today; the point is that introducing
+# such a file must be a deliberate act rather than a silent loss.
+UNMATCHED="$(cd "$SRC" && find skills -mindepth 2 -type f ! -name '*.md' -print 2>/dev/null)"
+if [ -n "$UNMATCHED" ]; then
+  printf 'install.sh: these files are inside a skill but are not .md, so the\n' >&2
+  printf 'manifest does not match them — they would NOT be installed, and no check\n' >&2
+  printf 'would report it:\n' >&2
+  printf '%s\n' "$UNMATCHED" | sed 's/^/  /' >&2
+  printf '\nWiden the manifest predicate deliberately if a skill needs to ship them.\n' >&2
+  exit 1
+fi
+
 # --- Clobber preflight ---------------------------------------------------
 # Per PATH, not per directory: $DEST_ROOT/skills exists for anyone who has any
 # other skill installed, so a directory-level guard would make --force
@@ -149,9 +165,16 @@ fi
 # the collision preflight and outside the byte verification — installed
 # unverified, and overwritten without --force being required. One predicate now
 # governs the preflight, the copy and the verification alike.
+LAST_DIR=""
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
-  mkdir -p "$DEST_ROOT/$(dirname "$rel")"
+  # find emits in directory order, so one variable halves the process spawns —
+  # the mkdir was previously re-issued for every file in a directory.
+  d="$(dirname "$rel")"
+  if [ "$d" != "$LAST_DIR" ]; then
+    mkdir -p "$DEST_ROOT/$d"
+    LAST_DIR="$d"
+  fi
   # cp -p preserves bytes and mode. Never a read/rewrite round trip: byte
   # identity with stride-lite is the product here.
   cp -p "$SRC/$rel" "$DEST_ROOT/$rel"

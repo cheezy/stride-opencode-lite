@@ -313,6 +313,35 @@ describe("install.sh", () => {
     expect(stdout).toMatch(new RegExp(`Skills:\\s+${skillCount}`));
   });
 
+  it("refuses to install when a skill holds a file the manifest cannot match", async () => {
+    // One predicate governs the preflight, the copy AND the verification, so
+    // anything it does not match is neither installed nor reported — "broken
+    // but green", strictly worse than the "installed but unverified" it
+    // replaced. Nothing trips this today; the guard is what keeps that true.
+    const src = await stagedSource();
+    await writeFile(join(src, "skills/stride-opencode-lite-workflow/template.txt"), "x\n");
+
+    const { stderr, exitCode } = await run(src);
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("are inside a skill but are not .md");
+    expect(stderr).toContain("template.txt");
+  });
+
+  it("installs a nested .md inside a skill", async () => {
+    // The manifest is `find skills -mindepth 1 -type f -name '*.md'`, so depth
+    // is not the limit — the extension is. Pinned so the guard above is
+    // understood as narrow rather than as "skills are flat".
+    const src = await stagedSource();
+    await mkdir(join(src, "skills/stride-opencode-lite-workflow/refs"), { recursive: true });
+    await writeFile(join(src, "skills/stride-opencode-lite-workflow/refs/deep.md"), "# deep\n");
+
+    const { exitCode, cwd } = await run(src);
+
+    expect(exitCode).toBe(0);
+    expect(existsSync(join(cwd, ".opencode/skills/stride-opencode-lite-workflow/refs/deep.md"))).toBe(true);
+  });
+
   it("is idempotent under --force", async () => {
     const src = await stagedSource();
     const first = await run(src);
