@@ -21,7 +21,9 @@ on-disk artifacts.
 | `templates/taskN.md.tpl` | `f5ff7db2802fbe5c9ac4d8ffafddc45ea09bdbca55541aed02f54552567cfedd` | 81 lines |
 
 `templates/` holds the two template blocks extracted verbatim from stride-lite's
-`create-goal` SKILL.md. They are not decoration: they are what lets a template
+`create-goal` SKILL.md at the commit above — `test/smoke.sh` re-extracts them
+from `git show <commit>:skills/stride-lite-create-goal/SKILL.md` and diffs, so
+they are tied to stride-lite itself rather than only to a constant in the script. They are not decoration: they are what lets a template
 failure print a real `diff -u` **offline**, which is the only case a consumer
 ever has. A sha256 mismatch on its own says something changed without saying
 what.

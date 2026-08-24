@@ -182,16 +182,21 @@ fi
 
 # --- The sha pin against stride-lite's source ---------------------------
 if [ "$PARITY_CREDITED" -eq 1 ]; then
-  sha_mismatch=0
+  sha_mismatch=""
+  # Record WHICH side drifted, not merely that one did: the failure body below
+  # diffs that side, and diffing the wrong one prints an empty diff under a
+  # failure message — the shape this stage was just fixed to avoid.
   for side in goal task; do
-    matches_pinned_hash "$WORK/$side.txt" || sha_mismatch=1
+    matches_pinned_hash "$WORK/$side.txt" || sha_mismatch="$sha_mismatch $side"
   done
-  if [ "$sha_mismatch" -eq 0 ]; then
+  if [ -z "$sha_mismatch" ]; then
     ok "both taskN templates match the stride-lite source hash"
   else
     nope "both taskN templates match the stride-lite source hash" \
-         "$(if [ -r "$VENDORED_TASKN_TPL" ]; then diff -u "$VENDORED_TASKN_TPL" "$WORK/goal.txt" | head -20; fi)
-expected $EXPECTED_TASKN_SHA256"
+         "$(for side in $sha_mismatch; do
+              [ -r "$VENDORED_TASKN_TPL" ] && diff -u "$VENDORED_TASKN_TPL" "$WORK/$side.txt" | head -20
+            done)
+expected $EXPECTED_TASKN_SHA256; drifted side(s):$sha_mismatch"
   fi
 else
   skipped "both taskN templates match the stride-lite source hash" "parity not credited"
@@ -745,9 +750,15 @@ fi
 
 if [ "$FIXTURES_CREDITED" -eq 1 ]; then
   hashdrift=""
+  # The templates are pinned to the SAME constants the live extractions are, so
+  # `diff -u vendored extracted` and the hash comparison become two statements
+  # about one frozen copy rather than a free-floating file. Without this the
+  # reference the offline diff rests on is asserted by nothing.
   for pair in "sample-requirements.md:$EXPECTED_SAMPLE_SHA256" \
               "expected-output/goal.md:$EXPECTED_GOAL_FIXTURE_SHA256" \
-              "expected-output/task1.md:$EXPECTED_TASK1_FIXTURE_SHA256"; do
+              "expected-output/task1.md:$EXPECTED_TASK1_FIXTURE_SHA256" \
+              "templates/goal.md.tpl:$EXPECTED_GOAL_TEMPLATE_SHA256" \
+              "templates/taskN.md.tpl:$EXPECTED_TASKN_SHA256"; do
     rel="${pair%%:*}"; want="${pair##*:}"
     got="$(shasum -a 256 "$FIXTURES_DIR/$rel" | cut -d' ' -f1)"
     matches_fixture_hash "$FIXTURES_DIR/$rel" "$want" || hashdrift="$hashdrift
@@ -778,7 +789,8 @@ if [ "$FIXTURES_CREDITED" -eq 1 ]; then
   done
   # The re-vendor procedure names the constants to update; a stale name there
   # sends the next person looking for a variable that does not exist.
-  for var in EXPECTED_SAMPLE_SHA256 EXPECTED_GOAL_FIXTURE_SHA256 EXPECTED_TASK1_FIXTURE_SHA256; do
+  for var in EXPECTED_SAMPLE_SHA256 EXPECTED_GOAL_FIXTURE_SHA256 EXPECTED_TASK1_FIXTURE_SHA256 \
+             EXPECTED_GOAL_TEMPLATE_SHA256 EXPECTED_TASKN_SHA256 EXPECTED_STRIDE_LITE_COMMIT; do
     grep -Fq "$var" "$FIXTURES_DIR/README.md" || readme_gap="$readme_gap $var"
   done
   if [ -z "$readme_gap" ]; then
@@ -803,7 +815,11 @@ if [ "$FIXTURES_CREDITED" -eq 1 ]; then
   # The pitfall against comparing per-run-varying values, enforced for the NEXT
   # refresh rather than for today's known-clean corpus.
   varying=""
-  for rel in expected-output/goal.md expected-output/task1.md sample-requirements.md; do
+  for rel in $FIXTURE_FILES; do
+    # README.md records the vendoring date, which is the one legitimate date in
+    # the tree. Everything else opts in by default, so the next vendored file
+    # cannot land outside this loop unnoticed.
+    [ "$rel" = "README.md" ] && continue
     grep -qE '[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{2}:[0-9]{2}|/Users/|/home/|/tmp/' "$FIXTURES_DIR/$rel" \
       && varying="$varying $rel"
   done
@@ -849,7 +865,15 @@ if [ "$FIXTURES_CREDITED" -eq 1 ]; then
   # commit's content. Grepping the sha out of the README only proves the README
   # contains a string; diffing the working tree can pass green against an
   # arbitrary later commit while the README still claims ffb670b.
-  if [ -d "$STRIDE_LITE_ROOT/.git" ] || git -C "$STRIDE_LITE_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # Exact toplevel, not --is-inside-work-tree: that walks UPWARD, so a plain
+  # directory sitting inside the enclosing kanban checkout would resolve the
+  # commit against the wrong repository and fail rather than skip.
+  SL_TOPLEVEL="$(git -C "$STRIDE_LITE_ROOT" rev-parse --show-toplevel 2>/dev/null)"
+  SL_REALPATH="$(cd "$STRIDE_LITE_ROOT" 2>/dev/null && pwd -P)"
+  # Both must be NON-EMPTY as well as equal: an absent directory makes both the
+  # empty string, and empty-equals-empty would enter the branch and resolve the
+  # commit against nothing.
+  if [ -n "$SL_TOPLEVEL" ] && [ "$SL_TOPLEVEL" = "$SL_REALPATH" ]; then
     if ! git -C "$STRIDE_LITE_ROOT" cat-file -e "$EXPECTED_STRIDE_LITE_COMMIT^{commit}" 2>/dev/null; then
       nope "fixtures: the recorded stride-lite commit resolves in that repository" \
            "$EXPECTED_STRIDE_LITE_COMMIT is not a commit in $STRIDE_LITE_ROOT"
@@ -865,6 +889,25 @@ if [ "$FIXTURES_CREDITED" -eq 1 ]; then
 $(diff -u "$WORK/at_commit.md" "$FIXTURES_DIR/$rel" | head -20)"
         fi
       done
+      # The vendored TEMPLATES are not under stride-lite's fixtures/, so the loop
+      # above cannot reach them — without this they are tied to stride-lite by
+      # nothing at all, only to a constant in this file.
+      UPSTREAM_SKILL_AT_COMMIT="$EXPECTED_STRIDE_LITE_COMMIT:skills/stride-lite-create-goal/SKILL.md"
+      if git -C "$STRIDE_LITE_ROOT" cat-file -e "$UPSTREAM_SKILL_AT_COMMIT" 2>/dev/null; then
+        git -C "$STRIDE_LITE_ROOT" show "$UPSTREAM_SKILL_AT_COMMIT" > "$WORK/skill_at_commit.md" 2>/dev/null
+        extract_goal_a "$WORK/skill_at_commit.md" > "$WORK/tpl_goal_at_commit.txt" 2>/dev/null
+        extract_a "$WORK/skill_at_commit.md" > "$WORK/tpl_taskn_at_commit.txt" 2>/dev/null
+        for pair in "templates/goal.md.tpl:tpl_goal_at_commit" \
+                    "templates/taskN.md.tpl:tpl_taskn_at_commit"; do
+          rel="${pair%%:*}"; at="${pair##*:}"
+          diff -q "$FIXTURES_DIR/$rel" "$WORK/$at.txt" >/dev/null || commitdrift="$commitdrift
+$(diff -u "$WORK/$at.txt" "$FIXTURES_DIR/$rel" | head -20)"
+        done
+      else
+        commitdrift="$commitdrift
+  skills/stride-lite-create-goal/SKILL.md absent at $EXPECTED_STRIDE_LITE_COMMIT"
+      fi
+
       if [ -z "$commitdrift" ]; then
         ok "fixtures: the recorded stride-lite commit resolves in that repository"
       else
@@ -892,7 +935,11 @@ $(diff -u "$STRIDE_LITE_ROOT/fixtures/$rel" "$FIXTURES_DIR/$rel" | head -20)"
     if [ -z "$updrift" ]; then
       ok "fixtures: the vendored copies match stride-lite's files on disk"
     else
-      nope "fixtures: the vendored copies match stride-lite's files on disk" "$updrift"
+      nope "fixtures: the vendored copies match stride-lite's files on disk" "$updrift
+(this stage compares stride-lite's WORKING TREE; the commit stage above compares
+blob bytes. stride-lite ships no .gitattributes, so a checkout with
+core.autocrlf=true produces exactly this symptom with nothing actually diverged
+— if the commit stage passed, trust it.)"
     fi
   else
     skipped "fixtures stride-lite cross-check" "STRIDE_LITE_ROOT not found"

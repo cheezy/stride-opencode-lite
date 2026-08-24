@@ -20,8 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure prints a real `diff -u` offline instead of two hashes — the only case
   a consumer ever has.
 - A stage that resolves the recorded stride-lite commit in that repository and
-  compares the vendored files against that commit's content rather than against
-  a moving working tree.
+  compares the vendored files — artifacts and templates alike — against that
+  commit's content rather than against a moving working tree.
 
 - Repository scaffold: `package.json`, `tsconfig.json`, `.gitignore`, `LICENSE`,
   a `README` stub and this changelog, plus the empty `skills/`, `agents/`,

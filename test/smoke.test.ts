@@ -375,6 +375,36 @@ describe("test/smoke.sh", () => {
     expect(stderr).toContain("FAIL  fixtures: README.md records the stride-lite source commit");
   });
 
+  it("fails when a vendored TEMPLATE is tampered with", async () => {
+    // The reference the offline diff rests on. It was added to the presence and
+    // inventory stages but not to the hash loop, so appending a line to it left
+    // the suite green — a hash nobody checks, the same defect class the commit
+    // stage was added to fix.
+    const fixtures = await treeCopy("fixtures");
+    const target = join(fixtures, "templates/goal.md.tpl");
+    await Bun.write(target, (await Bun.file(target).text()) + "JUNK\n");
+
+    const { stderr, exitCode } = await run({ STRIDE_SMOKE_FIXTURES_DIR: fixtures });
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("FAIL  fixtures: every vendored file matches its pinned stride-lite sha256");
+    // And it is tied to stride-lite itself, not merely to a constant in the script.
+    expect(stderr).toContain("FAIL  fixtures: the recorded stride-lite commit resolves in that repository");
+  });
+
+  it("SKIPS the commit stage when STRIDE_LITE_ROOT is not a repository of its own", async () => {
+    // --is-inside-work-tree walks UPWARD, so a plain directory inside the
+    // enclosing checkout used to resolve the commit against the wrong repo and
+    // FAIL. The contract is to skip.
+    const plain = await mkdtemp(join(tmpdir(), "stride-lite-plain-"));
+    scratchDirs.push(plain);
+
+    const { stdout, exitCode } = await run({ STRIDE_LITE_ROOT: plain });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("SKIP  fixtures: the recorded stride-lite commit resolves in that repository");
+  });
+
   it("SKIPS the stride-lite cross-check when stride-lite is absent, never passes it", async () => {
     // stride-lite is gitignored and absent for any consumer, so the
     // cross-check must degrade to a stated skip rather than a pass or a
