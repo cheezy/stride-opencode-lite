@@ -29,7 +29,7 @@ The skill exits **exactly once**, after all of these have happened:
 
 1. Every `taskN.md` in the goal directory has a `## Completion Summary` section appended.
 2. `goal.md` has its `## Completion Summary` appended.
-3. The `## after_goal` hook has auto-fired (via `tool.execute.after` on the goal.md Edit/Write) and the agent has either observed the structured success JSON or surfaced any failure JSON to the user.
+3. The `## after_goal` hook has auto-fired (via `tool.execute.after` on the goal.md `edit`/`write`) and the agent has either observed the structured success JSON or surfaced any failure JSON to the user.
 
 
 After exit, do **not** re-enter the loop, do **not** start another goal, do **not** ask "should I work on another goal?". If the user wants another goal worked, they invoke the skill again with a different path. If the user wants the same goal re-run, that's an error — the skill detects "every taskN.md already has a Completion Summary" at Step 1 and stops cleanly with a "goal already complete" log line.
@@ -76,9 +76,9 @@ Read the goal directory. Iterate `task1.md`, `task2.md`, `task3.md`, ... in stri
 - If yes → this task is complete; skip to the next numeric task.
 - If no → this is the **next task**. Proceed to Step 2 with this file as the active task.
 
-If every `taskN.md` in the goal directory already has a `## Completion Summary` section, the goal is already complete —, log this and stop (without running `after_goal` again).
+If every `taskN.md` in the goal directory already has a `## Completion Summary` section, the goal is already complete — log this and stop (without running `after_goal` again).
 
-**Gap handling.** If the iteration finds `task1.md` and `task3.md` but no `task2.md`, treat this as a hard error: the goal directory is malformed., surface the gap to the user and stop without mutation. (The contract is "consecutive numeric files starting at 1"; do NOT silently skip gaps.)
+**Gap handling.** If the iteration finds `task1.md` and `task3.md` but no `task2.md`, treat this as a hard error: the goal directory is malformed: surface the gap to the user and stop without mutation. (The contract is "consecutive numeric files starting at 1"; do NOT silently skip gaps.)
 
 ### Step 1a — Enrichment check (sparse tasks route to `full`)
 
@@ -96,9 +96,8 @@ The plugin registered with OpenCode auto-fires the `## before_task` section from
 
 You do **NOT** read `.stride_lite.md` or execute its hook sections directly in this step — the harness does that. Missing `.stride_lite.md`, a missing `## before_task` section, or an empty fenced block all degrade to a clean no-op (exit 0) so the dispatch proceeds. A failing command emits a structured failure JSON on stdout for your Step 8 Completion Summary to reference.
 
-If Step 3's dispatch is blocked by a `before_task` failure, Surface the plugin's structured failure JSON directly. (stride-lite triages it with a `hook-diagnostician` agent; that agent is not ported here, and triage was always an improvement on the raw dump rather than a precondition — a blocking section's failure stops the loop; an `after_goal` failure is reported and does not.)
+If Step 3's dispatch is blocked by a `before_task` failure, surface the plugin's structured failure JSON directly and stop. (stride-lite triages it with a `hook-diagnostician` agent; that agent is not ported here, and triage was always an improvement on the raw dump rather than a precondition — a blocking section's failure stops the loop; an `after_goal` failure is reported and does not.)
 
-**Triage does not unblock.** The diagnostician diagnoses and returns a plan; it cannot fix, re-run or proceed. The failure is still blocking, the workflow still stops, and the user still decides. The dispatch happens *before* the stop so the user gets a triage rather than a raw dump — never *instead* of it.
 
 ### Step 3 — Dispatch `@task-explorer` (decision matrix)
 
@@ -175,7 +174,7 @@ Follow the acceptance criteria as your definition of done. Replicate the pattern
 You do not read `.stride_lite.md` and you do not run its commands in this step. The plugin fires the section; you observe the result.
 Same auto-fire pattern as Step 2, but the harness runs the `## after_task` section as a **`tool.execute.before`** hook on the Step 6 `@task-reviewer` dispatch of `@task-reviewer`. Same blocking semantics — a non-zero exit blocks the reviewer dispatch, which surfaces to you as a Step 6 failure.
 
-If the reviewer dispatch is blocked by an `after_task` failure, Surface the plugin's structured failure JSON directly. (stride-lite triages it with a `hook-diagnostician` agent; that agent is not ported here, and triage was always an improvement on the raw dump rather than a precondition — a blocking section's failure stops the loop; an `after_goal` failure is reported and does not.) This is the mixed-output case the agent is most useful for — an `after_task` section is typically a test suite and a linter, and their failures rarely want fixing in the order they printed. Triage does not unblock: the failure is still blocking and the workflow still stops.
+If the reviewer dispatch is blocked by an `after_task` failure, surface the plugin's structured failure JSON directly and stop. (stride-lite triages it with a `hook-diagnostician` agent; that agent is not ported here, and triage was always an improvement on the raw dump rather than a precondition — a blocking section's failure stops the loop; an `after_goal` failure is reported and does not.) This is the mixed-output case the agent is most useful for — an `after_task` section is typically a test suite and a linter, and their failures rarely want fixing in the order they printed. Triage does not unblock: the failure is still blocking and the workflow still stops.
 
 You do **NOT** execute `.stride_lite.md` hook sections directly in this step. The harness handles it; a failing command emits structured failure JSON for your Step 8 Completion Summary.
 
@@ -268,7 +267,7 @@ A session writes `.exploratory/` into **the user's project**, and its artifacts 
 
 **Read the project's `.gitignore` and check for the entry. If it is missing, skip Step 6a and record why.**
 
-This is a **Read-tool operation on a single file, not a Bash call** — no `grep`, no `cat`. Saying so matters: `## Bash scope`'s pitfall responds to a command missing from its ✅ list by surfacing the limitation and going no further, and a step that must never fail anything cannot be the step that triggers it. If for any reason you cannot read the file, that is the same clean skip as a missing entry. Step 0 already mentioned it; this is the point where the mention either took effect or did not, and dispatching anyway would write the artifacts the mention existed to protect.
+This is a **read-tool operation on a single file, not a Bash call** — no `grep`, no `cat`. Saying so matters: `## Bash scope`'s pitfall responds to a command missing from its ✅ list by surfacing the limitation and going no further, and a step that must never fail anything cannot be the step that triggers it. If for any reason you cannot read the file, that is the same clean skip as a missing entry. Step 0 already mentioned it; this is the point where the mention either took effect or did not, and dispatching anyway would write the artifacts the mention existed to protect.
 
 This is a **dispatch-level precondition**, like the affirmative, and sits outside the gate for the same reason. It fails closed exactly as every other precondition here does: unmet means a clean skip with a recorded reason, never a failure and never a prompt. **Never edit their `.gitignore` to satisfy it** — a check that repairs its own subject is not a check.
 
@@ -545,7 +544,7 @@ Otherwise, read the active task file's `## Review Report` section. Extract the f
 - If `status == "approved"` → proceed to Step 8.
 - If `status == "changes_requested"` → increment the `review_iteration` counter (initialized to 0 at Step 2) and:
   - If `review_iteration < max_review_iterations` (default 3) → loop back to **Step 4** (Implementation). Make further code changes addressing the reviewer's issues. Then re-run Steps 5, 6, **6c** and 7 in sequence. **6c is in the ordinary re-run set** because it runs on every pass; 6a and 6b stay out under their at-most-once rule.
-  - If `review_iteration >= max_review_iterations` → and stop the workflow. Surface the failing review's prose summary line + the list of unresolved issues to the user. Do NOT write a Completion Summary; the task remains incomplete.
+  - If `review_iteration >= max_review_iterations` → stop the workflow. Surface the failing review's prose summary line + the list of unresolved issues to the user. Do NOT write a Completion Summary; the task remains incomplete.
 
 **Session-escalation branch.** If Step 6a returned a Critical finding this task **introduced** — by Step 6a's provenance test, not by what the finding says about itself — treat it exactly as `changes_requested`, whatever the `## Review Report` said: increment `review_iteration`, loop back to **Step 4**, fix the defect, then re-run Steps 5, 6 and 6a. **The re-run must actually re-reach the defect:** re-execute the finding's own minimal repro, because a session that stopped on its budget before getting there has verified nothing — raise the budget and run it again rather than reading a truncated session as confirmation that the fix holds. The cap is the same `max_review_iterations`, and hitting it has the same terminal shape:, stop, surface the finding, write no Completion Summary.
 
@@ -780,9 +779,11 @@ echo "after_task hook ran"
 
 ## Bash scope
 
+**Entries are exact invocations, not prefixes.** A global option placed before the subcommand — `-c`, `-C`, `--exec-path`, `--config-env` — is covered by no entry below, and each can execute or relocate an arbitrary program under a `git` name. `git bisect run`, `git fetch ext::…`, `git submodule update` and `git grep -O…` are absent from the allow list and therefore forbidden.
+
 The workflow skill's Bash usage is scoped to a specific set of operations. Explicit ✅ examples:
 
-- ✅ `.stride_lite.md` hook execution is performed by the plugin from `src/index.ts`.sh` (or `.ps1` on native Windows) — this skill body does NOT run `## before_task` / `## after_task` / `## after_goal` directly.
+- ✅ `.stride_lite.md` hook execution is performed by the plugin from `src/index.ts` — this skill body does NOT run `## before_task` / `## after_task` / `## after_goal` directly.
 - ✅ `git diff --no-ext-diff --no-textconv HEAD` — captured by the task-reviewer agent in Step 6 (not directly by this skill; the agent has its own Bash grant).
 - ✅ `ls`, `test -f`, `find` — for filesystem navigation inside the goal directory (listing taskN.md files, checking for task(K+1).md existence).
 - ✅ `git rev-parse --show-toplevel` — for locating the project root (e.g., to inspect `.stride_lite.md` for the user, not to execute it).
@@ -813,13 +814,13 @@ If the user wants build/test/lint runs as part of the workflow, they put them in
 - **`.stride_lite.md` hook section exists but the fenced bash block is empty** — same as missing: no-op, proceed.
 - **Goal directory missing `goal.md`** — hard error:, surface a clear message ("goal_directory_path is not a valid stride-opencode-lite goal — no goal.md found") and stop.
 - **Goal directory has no taskN.md files** — hard error:, surface a clear message and stop. The workflow needs at least task1.md to do anything.
-- **Goal directory has task1.md and task3.md but no task2.md** — hard error per Step 1's gap-handling rule., surface the gap and stop.
+- **Goal directory has task1.md and task3.md but no task2.md** — hard error per Step 1's gap-handling rule: surface the gap and stop.
 - **Every task in the goal resolves to `skip-all`** — a legitimate outcome, not a failure: no explorer, no reviewer, and neither `before_task` nor `after_task` fires anywhere in the goal. `after_goal` still fires on the goal.md write, because that trigger is a file write rather than an agent dispatch. Record the matrix decision on every task as usual — the audit trail is the only evidence the goal was gated rather than skipped by accident.
-- **Every taskN.md already has `## Completion Summary`** —, log "goal already complete" and stop. Do NOT re-run after_goal (the goal has already been wrapped up in a prior session).
+- **Every taskN.md already has `## Completion Summary`** — log "goal already complete" and stop. Do NOT re-run after_goal (the goal has already been wrapped up in a prior session).
 - **hook-diagnostician dispatch fails or returns an error** — surface the raw failure JSON instead and stop as usual. Triage is an improvement on the raw dump, never a precondition for reporting it; a failed diagnosis must not swallow the hook failure it was dispatched to explain.
 - **task-enricher dispatch fails or returns an error** — record it and proceed with the task file as it stands. Unlike the explorer, enrichment is a gap-filler rather than a prerequisite: the file was workable before the dispatch and is unchanged after a failed one. Note the failure in the Step 8 Completion Summary so a thin task file never looks like a deliberately thin one.
-- **task-explorer agent dispatch fails or returns an error** —, surface the explorer's error and stop. The explorer's findings are a prerequisite for high-quality implementation.
-- **task-reviewer agent dispatch fails or returns an error** —, surface the reviewer's error and stop. Without a review verdict, the workflow can't decide Step 7.
+- **task-explorer agent dispatch fails or returns an error** — surface the explorer's error and stop. The explorer's findings are a prerequisite for high-quality implementation.
+- **task-reviewer agent dispatch fails or returns an error** — surface the reviewer's error and stop. Without a review verdict, the workflow can't decide Step 7.
 - **task-reviewer's `## Review Report` has no fenced JSON block** — fall back to prose-substring matching per Step 7's JSON parse fallback. Conservative default on ambiguity: treat as `changes_requested`. **This does not apply when the matrix skipped the review**: there is then no Review Report at all, which is a decision rather than an ambiguity. Take Step 7's no-review branch instead — treating it as `changes_requested` would loop a skip-all task back to Step 4 until it burned the iteration cap.
 - **Review-loop exhausts max_review_iterations** — and stop without writing the Completion Summary. The task file retains its latest `## Review Report` section as the audit trail. The user can manually fix the issues and re-run the workflow; on re-run the task is "incomplete" (no Completion Summary) so Step 1 picks it up again.
 - **after_goal hook fails after goal.md Completion Summary is written** — surface the failure but do NOT roll back the goal.md mutation. Still before stopping. The user can re-run the after_goal hook manually (e.g., by inspecting `.stride_lite.md` and running the commands directly).
@@ -828,7 +829,7 @@ If the user wants build/test/lint runs as part of the workflow, they put them in
 
 A three-task goal at `docs/implementation/PENDING/add-notifications/` containing `goal.md`, `task1.md`, `task2.md`, `task3.md`, and a `.stride_lite.md` in the project root with all three hook sections populated. The three tasks deliberately land on three different matrix rows. The workflow proceeds:
 
-- **Step 0.** Write `.stride-opencode-lite/.orchestrator_active` once, at workflow entry. Until it exists the harness's hook gate is closed and none of the `.stride_lite.md` sections below would fire.
+- **Step 0.** Session preflight: collect the authorized, non-production affirmative for Step 6a if it is wanted, and mention `.exploratory/` if it is not gitignored. Nothing is written and no gate is armed — this plugin has no activation marker.
 
 **Iteration 1 — task1.md (Emit PubSub broadcast on comment insert).**
 
@@ -979,7 +980,7 @@ If you catch yourself thinking any of these, go back to the documented step:
 - **"The matrix says explore and review, but this change is obviously trivial — I'll skip."** No, and this is the more dangerous direction. The `2 or more key files` row exists precisely to stop a multi-file change from talking its way out of review. Follow the row.
 - **"The reviewer's `changes_requested` looks minor — I'll write the Completion Summary anyway."** No. The Step 7 contract is binary: `approved` proceeds, anything else loops back. Bypassing the loop defeats the safeguard.
 - **"The after_task hook failed but it's just a flaky test — let me skip and complete the task."** No. Blocking failures must and stop the workflow. Fix the root cause (in the user's `.stride_lite.md`) and re-run.
-- **"The review-loop has hit 3 iterations but the reviewer keeps finding the same issue — I'll force-approve."** No., stop, surface the unresolved issue, and let the user intervene. Forcing approval defeats the entire review-loop purpose.
+- **"The review-loop has hit 3 iterations but the reviewer keeps finding the same issue — I'll force-approve."** No — stop, surface the unresolved issue, and let the user intervene. Forcing approval defeats the entire review-loop purpose.
 - **"The app is on `localhost`, so it's obviously a dev box — I'll dispatch a session without asking."** No. A `localhost` URL is a routing fact, not an authorization. The affirmative comes from the user at Step 0 or not at all, and inferring it *is* supplying it on their behalf. Skip Step 6a.
 - **"`/explore` is the plugin's headline command and does everything Step 6a needs — I'll just run that."** No, and this is the easiest mistake to make precisely because it is the command the plugin advertises. It opens with an unconditional question round this workflow cannot answer, and the workflow never prompts between steps. Dispatch `stride-exploratory-testing:explorer`, one charter per dispatch, or skip. The same goes for typing the bare plugin name, which resolves to the router skill.
 - **"The check `/harden` drafted looks right — I'll record the manual test as covered."** No. `/harden` holds no test runner; it ran nothing. "Drafted, not run" is the only honest phrasing, and calling a draft green is fabricated test output.

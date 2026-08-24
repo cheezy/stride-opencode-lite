@@ -480,5 +480,40 @@ fi
 
 fi
 
+# --- The no-marker decision, pinned (negative) ---------------------------
+# This port writes no activation marker. That decision lived in prose in three
+# places and was enforced nowhere, which is exactly why a marker instruction
+# regenerated in the walkthrough and still passed a green suite. Pin it.
+if [ -s "$WORKFLOW" ]; then
+  marker_orders="$(grep -ciE 'clear the marker|marker clear|write the marker|orchestrator_active|hook gate is closed' "$WORKFLOW")"
+  if [ "$marker_orders" -eq 0 ]; then
+    ok "workflow: no activation-marker instruction survives"
+  else
+    nope "workflow: no activation-marker instruction survives" \
+         "$marker_orders marker instruction(s) present in a file that declares there is no marker"
+  fi
+else
+  nope "workflow: no activation-marker instruction survives" "workflow file is empty"
+fi
+
+# --- The terminal-move grant is a GRANT, not prose mentioning a verb -----
+# `grep -Fq 'mv'` over the allow region also matches the prohibition
+# "no `mkdir`, no `mv`, no `rmdir`" in a sibling bullet, so match the grant
+# bullets themselves and require the carve-out's own qualifier.
+if [ -s "$WORK/wf_allow.txt" ]; then
+  carve=0
+  grep -qE '^- ✅ .*`git mv`' "$WORK/wf_allow.txt" && carve=$((carve+1))
+  grep -qE '^- ✅ .*`git rev-parse --is-inside-work-tree`' "$WORK/wf_allow.txt" && carve=$((carve+1))
+  grep -qE '^- ✅ .*`git ls-files' "$WORK/wf_allow.txt" && carve=$((carve+1))
+  grep -qE '^- ✅ .*`mkdir -p' "$WORK/wf_allow.txt" && carve=$((carve+1))
+  qualified="$(grep -c 'Forbidden elsewhere in the skill body' "$WORK/wf_allow.txt")"
+  if [ "$carve" -eq 4 ] && [ "$qualified" -ge 4 ]; then
+    ok "workflow: the terminal-move carve-out is granted and scoped"
+  else
+    nope "workflow: the terminal-move carve-out is granted and scoped" \
+         "granted $carve/4 as ✅ bullets, $qualified carry the Forbidden-elsewhere qualifier"
+  fi
+fi
+
 printf '\n%d passed, %d failed, %d skipped\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" -eq 0 ]

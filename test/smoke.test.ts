@@ -87,6 +87,8 @@ describe("test/smoke.sh", () => {
       "workflow: the allow and deny regions do not overlap (negative control)",
       "workflow: the walkthrough never hand-executes a hook section",
       "workflow: the archive move keeps git-mv preference, collision suffixing and the PENDING guard",
+      "workflow: no activation-marker instruction survives",
+      "workflow: the terminal-move carve-out is granted and scoped",
     ]) {
       expect(stdout).toContain(`PASS  ${label}`);
     }
