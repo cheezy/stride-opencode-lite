@@ -114,14 +114,15 @@ describe("package.json", () => {
 
   it("states its version in package.json and nowhere else", async () => {
     const pkg = await readJson("package.json");
+    const version = pkg.version as string;
 
-    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
 
     // package.json is the single source. A version duplicated into a skill
     // body, a README badge or an installer goes stale the next release, and
     // nothing would catch it.
     const proc = Bun.spawnSync(
-      ["git", "grep", "-l", "--fixed-strings", pkg.version, "--",
+      ["git", "grep", "-l", "--fixed-strings", version, "--",
        "*.md", "*.ts", "*.sh", "*.ps1"],
       { cwd: repoRoot },
     );
@@ -147,7 +148,7 @@ describe("package.json", () => {
     const released = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m);
 
     expect(released).not.toBeNull();
-    expect(released![1]).toBe(pkg.version);
+    expect(released![1]).toBe(pkg.version as string);
   });
 });
 
