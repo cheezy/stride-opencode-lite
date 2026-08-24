@@ -47,6 +47,8 @@
     "agents/",
     "commands/",
     "lib/",
+    "install.ps1",
+    "install.sh",
     "!**/.env",
     "!**/.env.*",
     "!**/*.local",

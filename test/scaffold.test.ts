@@ -48,6 +48,10 @@ describe("package.json", () => {
     // lib/ ships the four helper contract specs; dropping it from the files
     // list would silently publish a plugin without them.
     expect(files).toContain("lib/");
+    // The installers are Step 2 of the install; a github: reference that omits
+    // them leaves the user with no way to perform it.
+    expect(files).toContain("install.sh");
+    expect(files).toContain("install.ps1");
 
     expect(files).toContain("!src/**/*.test.ts");
     expect(files).not.toContain("test/");
