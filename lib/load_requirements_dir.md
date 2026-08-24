@@ -87,13 +87,15 @@ load_requirements_dir() {
         # `find -L` descends into symlinked directories to arbitrary depth, so
         # this check -- not find -- is what bounds the walk. The final path
         # component is resolved too: `pwd -P` resolves the directories a file
-        # sits in, but not a symlinked file itself. The 8-hop cap is
-        # deliberately below every platform's own symlink limit (measured at
-        # ~13 on macOS; conventionally 40 on Linux) so this check binds before
-        # the kernel's does. A cap above the kernel limit can never be reached
-        # -- the kernel refuses the chain first and `find -L` drops it -- and an
-        # unreachable control is an untestable one. Legitimate requirements
-        # symlinks are one or two hops.
+        # sits in, but not a symlinked file itself. The 8-hop cap sits well
+        # below every platform's own symlink limit (SYMLOOP_MAX is 32 on macOS,
+        # conventionally 40 on Linux), so this check binds first and its
+        # fail-closed path is reachable and testable everywhere. A cap set AT a
+        # platform's limit is worse than useless: on that platform the kernel
+        # refuses the chain and `find -L` drops it before the check runs, so the
+        # path looks defended and is never exercised -- while on a platform with
+        # a higher limit the same cap is reachable and its behaviour matters.
+        # Legitimate requirements symlinks are one or two hops.
         resolved="$file"
         local hops=0
         while [ -L "$resolved" ] && [ "$hops" -lt 8 ]; do
@@ -213,7 +215,7 @@ stderr: `load_requirements_dir: skipping (binary): diagram.png`
 - **Empty directory** — empty stdout, no log, exit 0.
 - **Symlink as the directory itself** — followed (`find -L` follows the top-level symlink), and `dir` is resolved first so everything beneath it is measured against the resolved root.
 - **Symlink pointing outside `dir`** — skipped, whether it is a file or a directory, with `"load_requirements_dir: skipping (outside dir): <rel>"` on stderr. This is the containment control: the directory names a read scope, and a symlink must not widen it.
-- **Symlink chains** — followed up to 8 hops while resolving. The cap sits below every platform's own symlink limit (measured at ~13 on macOS, conventionally 40 on Linux) so it binds before the kernel's does; a cap above that limit could never be reached, because the kernel refuses the chain and `find -L` drops it first, and an unreachable control cannot be relied on. A chain still unresolved at the cap is **skipped outright** with `"load_requirements_dir: skipping (unresolved symlink chain): <rel>"` on stderr — it is never measured against the root, because a partially-resolved path can still sit inside `dir` while the kernel follows the remaining hops out of it. The cap therefore fails closed, and it bounds symlink loops by the same rule.
+- **Symlink chains** — followed up to 8 hops while resolving. The cap sits well below every platform's own symlink limit (`SYMLOOP_MAX` is 32 on macOS, conventionally 40 on Linux) so it binds first and its fail-closed path is reachable everywhere. A cap set *at* a platform's limit is the trap: there the kernel refuses the chain and `find -L` drops it before the check runs, so the path looks defended while never being exercised — and on a platform with a higher limit that same cap is reachable and its behaviour matters. A chain still unresolved at the cap is **skipped outright** with `"load_requirements_dir: skipping (unresolved symlink chain): <rel>"` on stderr — it is never measured against the root, because a partially-resolved path can still sit inside `dir` while the kernel follows the remaining hops out of it. The cap therefore fails closed, and it bounds symlink loops by the same rule.
 - **File without trailing newline** — the helper emits a synthetic newline before the blank separator so the next header is line-aligned.
 - **Permission denied on a file** — `cat` writes an error to stderr; the helper continues with the next file. Acceptable: the user is informed via stderr without aborting the whole context build.
 - **Concurrent modification of `dir` during the walk** — best-effort. Files added during the walk may or may not be picked up; files removed mid-walk may produce a transient `cat` error. Surface skills do not require atomicity for this read.

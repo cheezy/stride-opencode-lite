@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, symlink, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -125,9 +125,9 @@ describe("load_requirements_dir containment", () => {
     // first hop and would never exercise the cap at all.
     //
     // The hops are dotfiles so `find`'s hidden-file rule leaves only the entry
-    // point enumerated. 10 hops is above the spec's 8-hop cap and below the
-    // kernel's own limit (measured at ~13 here), so the OS can still resolve
-    // the chain and this control is the only thing that stops it.
+    // point enumerated. 10 hops is above the spec's 8-hop cap and well below
+    // SYMLOOP_MAX (32 on macOS, ~40 on Linux), so the OS resolves the chain
+    // happily and only this cap stops it.
     let previous = join(outside, "deep", "leak.md");
     for (let i = 0; i < 10; i++) {
       const next = join(reqs, `.hop-${i}`);
@@ -136,9 +136,14 @@ describe("load_requirements_dir containment", () => {
     }
     await symlink(previous, join(reqs, "chain.md"));
 
-    const { stdout } = await runHelper(reqs);
+    const { stdout, stderr } = await runHelper(reqs);
 
     expect(stdout).not.toContain("SECRET_CONTENT");
+    // Assert the CAP is what stopped it. Without this the test degrades into a
+    // duplicate of the containment test the moment the cap stops being
+    // exceeded: once the chain fully resolves, containment alone keeps the
+    // secret out and the test stays green under any cap value.
+    expect(stderr).toContain("unresolved symlink chain");
   });
 
   it("never emits content for any out-of-scope link, whatever the shape", async () => {
@@ -157,9 +162,30 @@ describe("load_requirements_dir containment", () => {
   });
 
   it("logs rather than silently returning when the directory cannot be resolved", async () => {
+    // Must reach the resolution branch, not the pre-existing missing-directory
+    // branch: a non-existent path is caught by `[ ! -d ]` and logs a different
+    // message, so pointing at one tests nothing new. A directory that EXISTS
+    // but cannot be entered is what makes `cd` fail.
+    const { reqs } = await fixture();
+    const unreadable = join(reqs, "locked");
+    await mkdir(unreadable);
+    await chmod(unreadable, 0o000);
+
+    try {
+      const { stderr, exitCode } = await runHelper(unreadable);
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain("cannot resolve directory");
+    } finally {
+      // Restore before teardown, or the scratch cleanup cannot remove it.
+      await chmod(unreadable, 0o755);
+    }
+  });
+
+  it("still logs the distinct missing-directory message for a path that is absent", async () => {
     const { stderr, exitCode } = await runHelper(join(tmpdir(), "definitely-not-here-12345"));
 
     expect(exitCode).toBe(0);
-    expect(stderr).toMatch(/load_requirements_dir: /);
+    expect(stderr).toContain("directory not found");
   });
 });

@@ -194,9 +194,13 @@ This port therefore:
 
 - states what `find -L` actually does, rather than what the source claimed;
 - adds a **containment check** that resolves each candidate — including a
-  symlinked final component, up to 32 hops — and skips anything landing outside
-  the resolved directory. Symlinked files pointing *inside* still work, which is
-  the behaviour the source meant to describe;
+  symlinked final component, up to **8 hops** — and skips anything landing
+  outside the resolved directory. A chain still unresolved at the cap is skipped
+  outright rather than measured, because a partially-resolved path can sit
+  inside the directory while the kernel follows the rest out of it. The cap is
+  well below every platform's `SYMLOOP_MAX` (32 on macOS, ~40 on Linux) so it
+  binds first and is reachable. Symlinked files pointing *inside* still work,
+  which is the behaviour the source meant to describe;
 - downgrades the `=== path ===` markers from "an unambiguous boundary" to what
   they are: a readable separator that file content can forge, with the assembled
   block called out as untrusted data.
