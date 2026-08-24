@@ -30,9 +30,18 @@ If `$ARGUMENTS` carries no positional prompt, the skill exits non-zero with a us
 
 ### Step 2: Activate the `stride-opencode-lite-create-task` skill
 
-Activate the skill and pass `$ARGUMENTS` through verbatim. The skill walks every flow step documented in its own `SKILL.md` — argument parsing, requirements loading, the `@create-decomposer` dispatch in single-task mode, slugification, path resolution, and rendering the task file.
+Activate the skill and pass `$ARGUMENTS` through verbatim.
+The skill walks every flow step documented in `skills/stride-opencode-lite-create-task/SKILL.md`:
 
-**Do not restate that flow as a checklist here.** The skill's steps are its own; a copy in this file is a copy that goes stale the first time the skill changes.
+1. `lib/parse_args` — extract the prompt and both flags
+2. `lib/load_requirements_dir` — read the requirements directory, non-fatal when missing
+3. Dispatch `@create-decomposer` in `mode=task`
+4. `lib/slugify` — normalise the task title
+5. `lib/resolve_output_path` with `kind=file` — produce a unique `<output-dir>/tasks/<slug>.md`
+6. Render and write the task file
+7. Print the final file path
+
+**This list mirrors the skill; it does not define it.** The skill owns the flow, and the introducing sentence deliberately says "every flow step" rather than naming a number, so the list can gain or lose an entry without this prose becoming false.
 
 ### Step 3: Surface the result
 

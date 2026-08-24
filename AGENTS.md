@@ -309,8 +309,16 @@ it **SKIPs** with a stated reason when absent, and is never credited as a pass.
 
 `test/smoke.sh` runs under `bun test` via `test/smoke.test.ts`. A `.sh` the test
 runner never invokes is free to rot, and a parity check nobody runs guards
-nothing. Test seams `STRIDE_SMOKE_SKILLS_DIR` and `STRIDE_LITE_ROOT` exist for
-that wrapper and default to the real paths.
+nothing. Test seams `STRIDE_SMOKE_SKILLS_DIR`, `STRIDE_SMOKE_COMMANDS_DIR` and
+`STRIDE_LITE_ROOT` exist for that wrapper and default to the real paths.
+
+It also carries the **command-file** stages, and they are there for a reason
+`test/commands.test.ts` cannot satisfy on its own terms: each reads TWO trees and
+requires them to agree — every activated skill name must resolve to a directory
+under `skills/`, and each create command's documented defaults must match
+`lib/parse_args.md`, which owns them. A check that compares a command against a
+map in its own test file proves nothing, because the map is edited alongside the
+command. Both stages have negative controls, in-script and in the wrapper.
 
 ### Init divergences from stride-lite
 

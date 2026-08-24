@@ -28,12 +28,14 @@
 #      -> fails the 81-line and no-`### ` structural checks.
 #
 # Test seams, defaulting to the real paths:
-#   STRIDE_SMOKE_SKILLS_DIR  point the parity stage at a copied skills tree
+#   STRIDE_SMOKE_SKILLS_DIR    point the parity stage at a copied skills tree
+#   STRIDE_SMOKE_COMMANDS_DIR  point the command stage at a copied commands tree
 #   STRIDE_LITE_ROOT         where to find stride-lite for the cross-check
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 SKILLS_DIR="${STRIDE_SMOKE_SKILLS_DIR:-$REPO_ROOT/skills}"
+COMMANDS_DIR="${STRIDE_SMOKE_COMMANDS_DIR:-$REPO_ROOT/commands}"
 STRIDE_LITE_ROOT="${STRIDE_LITE_ROOT:-$REPO_ROOT/../stride-lite}"
 
 # The stride-lite taskN template, pinned. This is the assertion that survives
@@ -536,6 +538,79 @@ if [ -s "$WORK/wf_allow.txt" ]; then
     nope "workflow: the terminal-move carve-out is granted and scoped" \
          "granted $carve/4 as ✅ bullets, $qualified carry the Forbidden-elsewhere qualifier"
   fi
+fi
+
+
+# --- Commands: cross-file consistency ------------------------------------
+# These are the assertions test/commands.test.ts structurally cannot make on
+# its own terms: each one reads TWO files and requires them to agree, so a
+# command and the thing it names cannot drift together the way a command and a
+# hardcoded map in its own test can.
+commands_ok=1
+
+# 1. Every activated skill name resolves to a skill directory that exists.
+missing_skill=""
+for cmd in "$COMMANDS_DIR"/*.md; do
+  named="$(sed -n 's/.*Activate the `\([a-z0-9-]*\)` skill.*/\1/p' "$cmd" | head -1)"
+  if [ -z "$named" ]; then
+    missing_skill="$missing_skill $(basename "$cmd"):no-activation-line"
+  elif [ ! -d "$SKILLS_DIR/$named" ]; then
+    missing_skill="$missing_skill $(basename "$cmd")->$named"
+  fi
+done
+if [ -z "$missing_skill" ]; then
+  ok "commands: every activated skill name resolves to a skill on disk"
+else
+  commands_ok=0
+  nope "commands: every activated skill name resolves to a skill on disk" "unresolved:$missing_skill"
+fi
+
+# 2. The create commands' documented defaults match lib/parse_args, which owns
+#    them. A literal copy in a test cannot catch a command drifting from the
+#    spec, because the copy drifts with it.
+PARSE_ARGS="$REPO_ROOT/lib/parse_args.md"
+drift=""
+for flag in --requirements-dir --output-dir; do
+  spec="$(sed -n "s/^| \`$flag <path>\` *| \`\([^\`]*\)\`.*/\1/p" "$PARSE_ARGS" | head -1)"
+  if [ -z "$spec" ]; then
+    drift="$drift $flag:absent-from-spec"
+    continue
+  fi
+  for cmd in create-goal create-task; do
+    grep -Fq "| \`$flag\` | \`$spec\` |" "$COMMANDS_DIR/$cmd.md" || drift="$drift $cmd:$flag"
+  done
+done
+if [ -z "$drift" ]; then
+  ok "commands: the create commands' defaults match the lib/parse_args spec"
+else
+  commands_ok=0
+  nope "commands: the create commands' defaults match the lib/parse_args spec" "drifted:$drift"
+fi
+
+# 3. Negative control. Both checks above must be able to go red, or a later
+#    refactor that quietly disables them would read as green.
+CTRL="$WORK/commands_ctrl"
+mkdir -p "$CTRL"
+cp "$COMMANDS_DIR"/*.md "$CTRL/"
+sed -i.bak 's/Activate the `stride-opencode-lite-init` skill/Activate the `stride-opencode-lite-no-such-skill` skill/' "$CTRL/init.md"
+sed -i.bak 's/^| `--output-dir` | `docs\/implementation\/PENDING` |/| `--output-dir` | `docs\/elsewhere` |/' "$CTRL/create-task.md"
+rm -f "$CTRL"/*.bak
+ctrl_skill=0
+ctrl_default=0
+[ -d "$SKILLS_DIR/$(sed -n 's/.*Activate the `\([a-z0-9-]*\)` skill.*/\1/p' "$CTRL/init.md" | head -1)" ] || ctrl_skill=1
+grep -Fq '| `--output-dir` | `docs/implementation/PENDING` |' "$CTRL/create-task.md" || ctrl_default=1
+if [ "$ctrl_skill" -eq 1 ] && [ "$ctrl_default" -eq 1 ]; then
+  ok "commands: both command checks detect a mutation (negative control)"
+else
+  commands_ok=0
+  nope "commands: both command checks detect a mutation (negative control)" \
+       "skill-rename detected=$ctrl_skill, default-drift detected=$ctrl_default"
+fi
+
+if [ "$commands_ok" -eq 1 ]; then
+  ok "Command-file assertions pass"
+else
+  nope "Command-file assertions pass" "one or more command stages failed above"
 fi
 
 printf '\n%d passed, %d failed, %d skipped\n' "$PASS" "$FAIL" "$SKIP"

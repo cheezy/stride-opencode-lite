@@ -29,9 +29,14 @@ Any other argument is a hard error surfaced by the skill, **not silently absorbe
 
 ### Step 2: Activate the `stride-opencode-lite-init` skill
 
-Activate the skill and pass `$ARGUMENTS` through verbatim. The skill walks every flow step documented in its own `SKILL.md` — flag parsing, the collision check, writing the canonical template, and printing the success message.
+Activate the skill and pass `$ARGUMENTS` through verbatim.
+The skill walks every flow step documented in `skills/stride-opencode-lite-init/SKILL.md`:
 
-**Do not restate that flow as a checklist here.** The skill's steps are its own; a copy in this file is a copy that goes stale the first time the skill changes.
+1. Parse the optional `--force` flag
+2. Collision-check `./.stride_lite.md` and write the canonical four-section template
+3. Print the success message instructing the user to fill in the fields
+
+**This list mirrors the skill; it does not define it.** The skill owns the flow, and the introducing sentence deliberately says "every flow step" rather than naming a number, so the list can gain or lose an entry without this prose becoming false.
 
 ### Step 3: Surface the result
 

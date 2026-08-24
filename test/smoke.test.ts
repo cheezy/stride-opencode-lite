@@ -44,6 +44,14 @@ const run = async (
   return { stdout, stderr, exitCode: await proc.exited };
 };
 
+/** A copy of a top-level tree, so a mutation never touches the working tree. */
+const treeCopy = async (name: string): Promise<string> => {
+  const dir = await mkdtemp(join(tmpdir(), `stride-lite-smoke-${name}-`));
+  scratchDirs.push(dir);
+  await cp(join(repoRoot, name), join(dir, name), { recursive: true });
+  return join(dir, name);
+};
+
 /** A copy of the skills tree, so a mutation never touches the working tree. */
 const skillsCopy = async (): Promise<string> => {
   const dir = await mkdtemp(join(tmpdir(), "stride-lite-smoke-"));
@@ -90,6 +98,10 @@ describe("test/smoke.sh", () => {
       "workflow: the activation marker is written at Step 0 and cleared on every stop",
       "workflow: the marker is documented as coordination and as fail-open",
       "workflow: the terminal-move carve-out is granted and scoped",
+      "commands: every activated skill name resolves to a skill on disk",
+      "commands: the create commands' defaults match the lib/parse_args spec",
+      "commands: both command checks detect a mutation (negative control)",
+      "Command-file assertions pass",
     ]) {
       expect(stdout).toContain(`PASS  ${label}`);
     }
@@ -135,6 +147,46 @@ describe("test/smoke.sh", () => {
 
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("FAIL  both taskN templates are structurally complete");
+  });
+
+  it("fails when a command names a skill that does not exist", async () => {
+    // The command stage reads two trees and requires them to agree. Prove it
+    // goes red rather than trusting that it ran: the label assertion above only
+    // shows the stage reported, not that it can fail.
+    const commands = await treeCopy("commands");
+    const target = join(commands, "init.md");
+    const source = await Bun.file(target).text();
+    await Bun.write(
+      target,
+      source.replace(
+        "Activate the `stride-opencode-lite-init` skill",
+        "Activate the `stride-opencode-lite-gone` skill",
+      ),
+    );
+
+    const { stderr, exitCode } = await run({ STRIDE_SMOKE_COMMANDS_DIR: commands });
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("FAIL  commands: every activated skill name resolves to a skill on disk");
+    expect(stderr).toContain("FAIL  Command-file assertions pass");
+  });
+
+  it("fails when a command's default drifts from the lib/parse_args spec", async () => {
+    const commands = await treeCopy("commands");
+    const target = join(commands, "create-goal.md");
+    const source = await Bun.file(target).text();
+    await Bun.write(
+      target,
+      source.replace(
+        "| `--output-dir` | `docs/implementation/PENDING` |",
+        "| `--output-dir` | `docs/elsewhere` |",
+      ),
+    );
+
+    const { stderr, exitCode } = await run({ STRIDE_SMOKE_COMMANDS_DIR: commands });
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("FAIL  commands: the create commands' defaults match the lib/parse_args spec");
   });
 
   it("SKIPS the stride-lite cross-check when stride-lite is absent, never passes it", async () => {

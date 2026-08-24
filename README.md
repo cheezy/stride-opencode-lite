@@ -8,8 +8,19 @@ and goals) as OpenCode skills, agents and commands, driven by a `.stride_lite.md
 hook file.
 
 > **Status: in progress.** The toolchain, hook parser, executor, plugin entry
-> point, activation-marker gate, helper specs, agents, skills and commands are in
-> place. This README will be expanded when the port is complete.
+> point, activation-marker gate, four helper specs, three agents, four skills and
+> three commands are in place. **The port is not complete**, and the shortfalls
+> are load-bearing rather than cosmetic:
+>
+> - `lib/select_workflow_branch.md` and the `task-enricher` and
+>   `hook-diagnostician` agents are unported (4 of stride-lite's 5 lib specs, 3 of
+>   its 5 agents), and no ported skill dispatches them.
+> - The two blocking hook triggers are **dormant on today's build** — they key on
+>   skills that ship as agents, so `before_task` and `after_task` do not fire.
+> - Nothing here has been exercised in a live OpenCode session.
+>
+> `AGENTS.md` carries the full Known gaps list, which is the authority. This
+> README will be expanded when the port is complete.
 
 ## Hook triggers
 

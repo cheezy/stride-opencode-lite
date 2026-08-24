@@ -52,11 +52,19 @@ describe.each(Object.keys(COMMANDS))("%s", (name) => {
   it("has OpenCode frontmatter carrying only a description", async () => {
     const fm = frontmatter(await readCommand(name));
 
-    expect(fm).toMatch(/^description: /m);
-    // Claude Code keys with no OpenCode equivalent. Carrying them would claim a
-    // contract the host does not honour.
-    expect(fm).not.toMatch(/^allowed-tools:/m);
-    expect(fm).not.toMatch(/^argument-hint:/m);
+    // Assert the whole key set, not a deny-list of two. A deny-list credits any
+    // key nobody thought to forbid — including the Claude Code keys below, which
+    // are named in the message rather than in the assertion for that reason.
+    const keys = fm
+      .split("\n")
+      .filter((line) => /^\S/.test(line))
+      .map((line) => line.split(":")[0]);
+
+    expect(keys).toEqual(["description"]);
+    // Named explicitly so a regression reads as what it is: these are Claude
+    // Code keys with no OpenCode equivalent.
+    expect(keys).not.toContain("allowed-tools");
+    expect(keys).not.toContain("argument-hint");
   });
 
   it("states its usage in the description and in the body", async () => {
@@ -76,12 +84,46 @@ describe.each(Object.keys(COMMANDS))("%s", (name) => {
     expect(body).toContain("pass `$ARGUMENTS` through verbatim");
   });
 
+  it("names a skill that actually exists on disk", async () => {
+    // The map above is edited alongside the command file, so on its own it
+    // proves nothing: a command naming a skill that does not exist would pass.
+    // Consult the directory instead.
+    const present = (await readdir(join(repoRoot, "skills"), { withFileTypes: true }))
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+
+    expect(present).toContain(COMMANDS[name]!);
+  });
+
   it("is a thin shell holding no orchestration", async () => {
     const body = bodyOnly(await readCommand(name));
 
     expect(body).toContain("## What this command does NOT do");
     expect(body).toContain("No business logic in this file");
     expect(body).toContain("Never POSTs to any API");
+  });
+
+  it("holds the thin-shell promise, not merely states it", async () => {
+    // The assertions above check that the file makes a promise. These check the
+    // promise is kept. Naming a helper in prose is delegation and is fine — what
+    // must not appear is a step this file would carry out itself, so the test
+    // looks for executable form rather than for helper names.
+    const body = bodyOnly(await readCommand(name));
+
+    // Every fenced block must be an unlabelled usage snippet. A command that
+    // grew a bash block doing slugification or file-writing fails here.
+    const fences = [...body.matchAll(/^```(\w*)\n([\s\S]*?)^```$/gm)];
+    expect(fences.length).toBeGreaterThan(0);
+    for (const [, lang, contents] of fences) {
+      expect(lang).toBe("");
+      expect(contents).toContain("[--");
+    }
+
+    // No imperative shell line. These do not occur in prose, so a match is a
+    // step this file performs rather than delegates.
+    for (const line of body.split("\n")) {
+      expect(line).not.toMatch(/^\s*(mkdir|printf|echo|cat|sed|awk|tr|git|curl|mv|cp)\s/);
+    }
   });
 
   it("keeps its step prose count-agnostic", async () => {
@@ -96,7 +138,18 @@ describe.each(Object.keys(COMMANDS))("%s", (name) => {
   it("carries no Claude Code host artifacts", async () => {
     const source = await readCommand(name);
 
-    for (const artifact of ["hooks.json", "exit 2", "Claude Code", "/stride-lite:", "PreToolUse"]) {
+    for (const artifact of [
+      "hooks.json",
+      "exit 2",
+      "Claude Code",
+      "/stride-lite:",
+      "PreToolUse",
+      "PostToolUse",
+      ".claude/",
+      "allowed-tools",
+      "argument-hint",
+      "CLAUDE_PROJECT_DIR",
+    ]) {
       expect(source).not.toContain(artifact);
     }
   });
@@ -113,18 +166,26 @@ describe("the create commands", () => {
     expect(body).toContain("`--output-dir` | `docs/implementation/PENDING`");
   });
 
-  it("state identical defaults", async () => {
-    // The defaults are a cross-command contract; a drift between the two would
-    // send the same prompt to two different places.
-    const goal = bodyOnly(await readCommand("create-goal"));
-    const task = bodyOnly(await readCommand("create-task"));
+  it("state defaults that match the lib/parse_args spec", async () => {
+    // Drive the assertion from the helper that owns the contract rather than
+    // re-stating it here — a literal copy cannot detect a command drifting
+    // from the spec, because the copy drifts with it.
+    const spec = await Bun.file(join(repoRoot, "lib/parse_args.md")).text();
+    const specRow = (flag: string): string => {
+      const m = spec.match(new RegExp(`\\| \`${flag} <path>\`\\s*\\| \`([^\`]+)\``));
+      expect(m).not.toBeNull();
+      return m![1]!;
+    };
 
-    for (const row of [
-      "| `--requirements-dir` | `docs/requirements` |",
-      "| `--output-dir` | `docs/implementation/PENDING` |",
-    ]) {
-      expect(goal).toContain(row);
-      expect(task).toContain(row);
+    const requirementsDefault = specRow("--requirements-dir");
+    const outputDefault = specRow("--output-dir");
+    expect(requirementsDefault).toBe("docs/requirements");
+    expect(outputDefault).toBe("docs/implementation/PENDING");
+
+    for (const name of ["create-goal", "create-task"]) {
+      const body = bodyOnly(await readCommand(name));
+      expect(body).toContain(`| \`--requirements-dir\` | \`${requirementsDefault}\` |`);
+      expect(body).toContain(`| \`--output-dir\` | \`${outputDefault}\` |`);
     }
   });
 });
@@ -165,6 +226,38 @@ describe("README", () => {
     expect(readme).toMatch(/^create-goal /m);
     expect(readme).toMatch(/^create-task /m);
     expect(readme).toMatch(/^init$/m);
+  });
+
+  it("states counts that match what is on disk", async () => {
+    // The status banner is the first thing a reader believes. A hand-written
+    // count in it goes stale the moment a spec or agent lands, so drive it from
+    // the directories rather than trusting the prose.
+    const readme = await Bun.file(join(repoRoot, "README.md")).text();
+    const count = async (dir: string, dirsOnly: boolean): Promise<number> =>
+      (await readdir(join(repoRoot, dir), { withFileTypes: true })).filter((e) =>
+        dirsOnly ? e.isDirectory() : e.isFile() && e.name.endsWith(".md"),
+      ).length;
+
+    const words = ["zero", "one", "two", "three", "four", "five", "six", "seven"];
+    expect(readme).toContain(`${words[await count("lib", false)]} helper specs`);
+    expect(readme).toContain(`${words[await count("agents", false)]} agents`);
+    expect(readme).toContain(`${words[await count("skills", true)]} skills`);
+    expect(readme).toContain(`${words[await count("commands", false)]} commands`);
+  });
+
+  it("does not claim the port is complete while gaps remain", async () => {
+    // The banner overclaimed before: it listed what was in place and said
+    // nothing about what was not, while AGENTS.md recorded three unported
+    // artifacts and two dormant triggers.
+    const readme = await Bun.file(join(repoRoot, "README.md")).text();
+    const agents = await Bun.file(join(repoRoot, "AGENTS.md")).text();
+
+    expect(readme).toContain("The port is not complete");
+    for (const gap of ["select_workflow_branch", "task-enricher", "hook-diagnostician", "dormant"]) {
+      // Each gap AGENTS.md records must also be visible from the README.
+      expect(agents).toContain(gap);
+      expect(readme).toContain(gap);
+    }
   });
 
   it("no longer claims the commands are unported", async () => {
