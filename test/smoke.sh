@@ -336,11 +336,16 @@ if slice_nonempty "termination-contract" "$WORK/wf_term.txt"; then
 fi
 
 # --- Review cap, pinned in two independent places ------------------------
-subsection '### Step 7 — Review-loop decision' > "$WORK/wf_step7.txt"
-if grep -q 'max_review_iterations' "$WORK/wf_step7.txt" && grep -q '3' "$WORK/wf_step7.txt"; then
-  ok "workflow: the review cap is 3 in Step 7"
-else
-  nope "workflow: the review cap is 3 in Step 7" "the cap sentence is missing from the Step 7 region"
+awk '/^### Step 7/ { inb = 1; next } inb && /^#{2,3} / { exit } inb' "$WORKFLOW" > "$WORK/wf_step7.txt"
+if slice_nonempty "step-7" "$WORK/wf_step7.txt"; then
+  # A bare `3` is satisfied by any region containing the digit, so require the
+  # cap named alongside it.
+  if grep -q 'max_review_iterations' "$WORK/wf_step7.txt" \
+     && grep -qE 'max_review_iterations[^0-9]*3|3[^0-9]*max_review_iterations|cap[^0-9]*3' "$WORK/wf_step7.txt"; then
+    ok "workflow: the review cap is 3 in Step 7"
+  else
+    nope "workflow: the review cap is 3 in Step 7" "the cap sentence is missing from the Step 7 region"
+  fi
 fi
 if grep -qE '^\|.*`max_review_iterations`.*`3`' "$WORKFLOW"; then
   ok "workflow: the review cap is 3 in the inputs table"
@@ -455,7 +460,11 @@ if slice_nonempty "walkthrough" "$WORK/wf_walk.txt"; then
 fi
 
 # --- The archive move ----------------------------------------------------
-awk '/^### Step 8/ { inb = 1; next } inb && /^## [A-Z]/ { exit } inb' "$WORKFLOW" > "$WORK/wf_step8.txt"
+# The archive move lives under a bold "Final-task detection." paragraph inside
+# Step 8, not under a heading, so anchor on that rather than on a heading —
+# slicing the whole step would pull in the telemetry apparatus and name a
+# region far wider than the assertions below actually check.
+awk '/^\*\*Final-task detection\.\*\*/ { inb = 1 } inb && /^## / { exit } inb' "$WORKFLOW" > "$WORK/wf_step8.txt"
 if slice_nonempty "step-8" "$WORK/wf_step8.txt"; then
   missing=""
   for entry in 'git rev-parse --is-inside-work-tree' 'git ls-files' 'n=2' '1000' 'PENDING'; do
