@@ -176,6 +176,57 @@ requirements directory and `docs/implementation/PENDING` for the output base.
 4. Write errors to stderr, prefixed `<helper_name>: <reason>`.
 5. Update the repository layout notes in this file.
 
+## Agents
+
+| File | Mention | Mode | Temp | Tool grants | Purpose |
+|---|---|---|---|---|---|
+| `agents/create-decomposer.md` | `@create-decomposer` | subagent | 0.3 | *none* | Turns a prompt plus requirements text into a structured decomposition, inline only |
+| `agents/task-explorer.md` | `@task-explorer` | subagent | 0.2 | read, grep, glob, edit, write | Enriches a task file with codebase context, writing an `## Exploration Report` into it |
+| `agents/task-reviewer.md` | `@task-reviewer` | subagent | 0.2 | read, grep, glob, bash, edit, write | Reviews a diff against a task file, writing a `## Review Report` into it |
+
+### `@mention` dispatch
+
+Agents are invoked by `@mention` — `@task-explorer`, `@task-reviewer`,
+`@create-decomposer` — using the bare filename stem. The full OpenCode plugin
+documents the same convention (its README names `.opencode/agents/` and gives
+`@task-explorer` as the example form), and its tool mapping records `Agent` →
+`@agent-name`.
+
+**Agent mentions are a separate namespace from the hook-trigger skill names, and
+mentioning an agent fires no hook.** The trigger table above keys on skill
+activation because an `@mention` emits no `tool.execute.*` event at all — that is
+the whole reason the trigger had to be chosen rather than translated. Naming an
+agent file after a trigger skill would therefore buy no wiring while strongly
+implying it does, so the two namespaces are kept deliberately distinct.
+
+### The tool grants
+
+The grants are the security boundary of this layer, and each is asserted by a
+test rather than left to review:
+
+- **`create-decomposer` gets nothing** — an explicit all-`false` map for all six
+  keys, not an omitted `tools:` key. stride-lite asserts this agent's lack of
+  access in prose only; declaring it here makes it enforceable. The explicit form
+  is also the safe branch under an open question: if an omitted key means
+  "inherit the default set", omission would silently hand the agent everything
+  with no visible symptom, whereas all-`false` is correct either way.
+- **`task-explorer` has no `bash`.** It cannot execute anything.
+- **`task-reviewer`'s `bash` is the only execution path in the agent layer**, and
+  its body bounds it to read-only git with an explicit prohibition list rather
+  than guidance. The list is pinned by a test.
+
+**A reading worth being able to overturn.** The task specified "task-explorer
+declares read, grep and glob; task-reviewer declares those plus bash", while also
+requiring both agents' append-or-replace contract be preserved — a contract that
+cannot run without `edit` and `write`. Those grants are therefore included, on the
+reading that the specification enumerates the read/search half of the tool
+translation and that the constraint being drawn is about **execution** (`bash`),
+which is what the pitfalls actually restrict. Note this is not a widening
+relative to the source: stride-lite grants both agents `Edit` and `Write`, and
+the literal reading would be a *narrowing* that leaves both agents able to
+compute a report and unable to emit it. Recorded here so it can be reversed
+deliberately rather than discovered.
+
 ### Deliberate divergence from stride-lite
 
 `lib/load_requirements_dir.md` is **not** byte-identical to its stride-lite
@@ -208,6 +259,16 @@ This port therefore:
 **stride-lite carries the same defect and should be fixed at the source, after
 which this file and the byte-identity check should be reconciled.**
 
+**A second, smaller divergence: the agents carry a secrets instruction the
+sources do not.** Security requires all three agents be told never to copy
+credentials, tokens or secret-bearing lines into their reports. None of the three
+stride-lite sources contains any such instruction — verified by grep for
+`secret|credential|token|redact|api key|password`, which returns zero hits across
+all three. So this is an **addition**, not a preservation: one bullet per agent,
+in each file's existing rules section, placed away from the Review Report's JSON
+block so the structured keys stay untouched. stride-lite should gain the same
+instruction at source.
+
 **Scoping the byte-identity exemption.** Do **not** blanket-exempt this file —
 that would silently accept any future unintended drift in the one helper that is
 now security-relevant. Exempt exactly these regions, and require byte-identity
@@ -226,6 +287,20 @@ control surfaces. The other three helper specs remain faithful ports and are
 fully in scope for byte-identity.
 
 ### What was deliberately not ported
+
+**Two agents are not ported.** stride-lite's `agents/` holds five;
+`hook-diagnostician.md` and `task-enricher.md` are not among the three here. The
+same two-phase pattern applies as for `lib/`: the sibling lite port's initial
+release shipped exactly these three agents, and those two arrived later bundled
+with the workflow-skill steps that dispatch them. A grep of the three ported
+agents found **zero** references to either, so nothing dangles. The workflow-port
+task owns them.
+
+**Assumptions that task owes a reconciliation.** The agent bodies now name
+`stride-opencode-lite-create-goal` and `stride-opencode-lite-create-task`, whose
+real names a later task fixes; and `task-reviewer` cites a workflow-skill step
+that does not exist yet, though the rule it cites is spelled out inline where it
+is used, so nothing is lost while the citation dangles.
 
 stride-lite's `lib/` also contains `select_workflow_branch.md`. It is **not**
 part of this set. It is consumed by the workflow orchestrator skill, and in
