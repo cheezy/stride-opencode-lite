@@ -210,10 +210,45 @@ test rather than left to review:
   is also the safe branch under an open question: if an omitted key means
   "inherit the default set", omission would silently hand the agent everything
   with no visible symptom, whereas all-`false` is correct either way.
-- **`task-explorer` has no `bash`.** It cannot execute anything.
-- **`task-reviewer`'s `bash` is the only execution path in the agent layer**, and
-  its body bounds it to read-only git with an explicit prohibition list rather
-  than guidance. The list is pinned by a test.
+- **`task-explorer` has no `bash`.** It cannot execute anything *directly* — and
+  that qualifier is load-bearing. **Write access is itself an escalation
+  primitive, and this repository ships the sink.** `routeAfter` in `src/index.ts`
+  fires on any `edit`/`write` whose basename is `goal.md` and whose arguments
+  carry `## Completion Summary`, then reads `.stride_lite.md` from disk and
+  executes the commands in the matched section. An agent holding write but not
+  bash can therefore write `.stride_lite.md` with arbitrary shell, then write any
+  `goal.md` containing that heading, and the plugin runs it — no bash grant and no
+  human step. The generic sinks are open too: git hooks, `package.json` scripts,
+  and an `opencode.json` granting a future session bash.
+
+  What is in place: `permission.bash: deny` and `permission.external_directory:
+  deny` on the explorer, and the body scopes `edit`/`write` to the supplied
+  `task_file_path`. **The body scope is prose inside a prompt, not host
+  enforcement**, and the frontmatter has no path-scoped edit permission to
+  express it with. **Still owed:** a `tool.execute.before` guard that rejects an
+  `edit`/`write` from this agent whose resolved path is not the task file, and a
+  narrower `routeAfter` so an arbitrary agent-authored `goal.md` cannot trigger
+  the hook. Both live in `src/index.ts`, not in an agent definition, so they are
+  recorded here rather than fixed under a task that ports agents.
+- **`task-reviewer`'s `bash` is the only DIRECT execution path in the agent
+  layer.** It is bounded twice over. In the body, by an explicit prohibition list
+  with a closed allow list — "read-only git" is not a safe class, because
+  `git -c core.pager=…`, `git bisect run`, `git fetch ext::…`,
+  `git submodule update` and `git grep -O…` all execute arbitrary programs under a
+  `git` name, and a plain `git diff` honours `diff.external` and `textconv`, which
+  is why the allowed diff invocations carry `--no-ext-diff --no-textconv`. And in
+  the frontmatter, by `permission.bash` as a default-`deny` pattern map that allows
+  only those five invocations — so an unlisted command is refused by the host
+  rather than by the model's own classification.
+
+- **`permission` blocks back every `tools` map.** A six-key `tools` enumeration
+  cannot deny a namespace that is open and runtime-extensible: the SDK types it as
+  `{ [key: string]: boolean }` over "all available tool IDs, including
+  dynamically registered tools", so `patch`, `webfetch` and any MCP-registered
+  tool are simply unnamed by it. `permission` is a closed vocabulary — `edit`,
+  `bash`, `webfetch`, `doom_loop`, `external_directory` — so it cannot be defeated
+  by a new tool appearing. Both layers are declared; where they overlap they
+  agree.
 
 **A reading worth being able to overturn.** The task specified "task-explorer
 declares read, grep and glob; task-reviewer declares those plus bash", while also
@@ -300,7 +335,11 @@ task owns them.
 `stride-opencode-lite-create-goal` and `stride-opencode-lite-create-task`, whose
 real names a later task fixes; and `task-reviewer` cites a workflow-skill step
 that does not exist yet, though the rule it cites is spelled out inline where it
-is used, so nothing is lost while the citation dangles.
+is used, so nothing is lost while the citation dangles. The agents' several
+`v0.6.0` citations are stride-lite release numbers with no referent in this
+plugin (which is at `0.0.0` with an unreleased changelog); they are attributed to
+stride-lite inline rather than renumbered, since they are accurate citations of
+the source.
 
 stride-lite's `lib/` also contains `select_workflow_branch.md`. It is **not**
 part of this set. It is consumed by the workflow orchestrator skill, and in
