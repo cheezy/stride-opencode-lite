@@ -27,6 +27,8 @@ const COMMANDS: Record<string, string> = {
   init: "stride-opencode-lite-init",
 };
 
+const COMMAND_NOT_DO_HEADING = "## What this command does NOT do";
+
 const readCommand = async (name: string): Promise<string> =>
   Bun.file(join(commandsDir, `${name}.md`)).text();
 
@@ -37,6 +39,47 @@ const frontmatter = (source: string): string => {
 };
 
 const bodyOnly = (source: string): string => source.replace(/^---\n[\s\S]*?\n---\n/, "");
+
+/**
+ * Every way a command body holds orchestration rather than delegating it.
+ *
+ * ONE definition, called by both the assertion and its mutation proof. Written
+ * as a copy first, and the copy had already drifted from the original in two
+ * ways by the time it was reviewed — a duplicated predicate cannot prove the
+ * original goes red, because loosening the original leaves the copy untouched.
+ *
+ * Scoped to the region before the does-NOT block, which legitimately names the
+ * forbidden things. Naming a lib helper in delegation prose is fine and must not
+ * fire: the signals are executable form and imperative mood, not helper names.
+ */
+const thinShellViolations = (body: string): string[] => {
+  const cut = body.indexOf(COMMAND_NOT_DO_HEADING);
+  const doing = cut === -1 ? body : body.slice(0, cut);
+  const found: string[] = [];
+
+  // Every fenced block must be an unlabelled usage snippet.
+  for (const [, lang, contents] of doing.matchAll(/^```(\w*)\n([\s\S]*?)^```$/gm)) {
+    if (lang !== "") found.push(`labelled fence: \`\`\`${lang}`);
+    else if (!contents.includes("[--")) found.push("unlabelled fence that is not the usage snippet");
+  }
+
+  for (const raw of doing.split("\n")) {
+    // A list marker must not launder an imperative: "1. Slugify the title and
+    // write it to <path>" is the most natural shape for orchestration here.
+    const line = raw.replace(/^\s*(?:\d+\.|[-*])\s+/, "");
+
+    if (/^\s*(mkdir|printf|echo|cat|sed|awk|tr|git|curl|mv|cp)\s/.test(line)) {
+      found.push(`shell command: ${line.trim().slice(0, 40)}`);
+    }
+    // Imperative addressed to THIS file, as against prose describing the skill
+    // ("The skill walks…", "`lib/slugify` — normalise the title").
+    if (/^(Write|Create|Slugify|Lowercase|Replace|Resolve|Render) the /.test(line)) {
+      found.push(`imperative: ${line.trim().slice(0, 40)}`);
+    }
+  }
+
+  return found;
+};
 
 describe("the commands directory", () => {
   it("contains exactly the three ported commands", async () => {
@@ -104,70 +147,30 @@ describe.each(Object.keys(COMMANDS))("%s", (name) => {
   });
 
   it("holds the thin-shell promise, not merely states it", async () => {
-    // The assertions above check that the file makes a promise. These check the
-    // promise is kept. Naming a helper in prose is delegation and is fine — what
-    // must not appear is a step this file would carry out itself, so the test
-    // looks for executable form rather than for helper names.
-    const body = bodyOnly(await readCommand(name));
-
-    // Every fenced block must be an unlabelled usage snippet. A command that
-    // grew a bash block doing slugification or file-writing fails here.
-    const fences = [...body.matchAll(/^```(\w*)\n([\s\S]*?)^```$/gm)];
-    expect(fences.length).toBeGreaterThan(0);
-    for (const [, lang, contents] of fences) {
-      expect(lang).toBe("");
-      expect(contents).toContain("[--");
-    }
-
-    // No imperative shell line. These do not occur in prose, so a match is a
-    // step this file performs rather than delegates.
-    for (const line of body.split("\n")) {
-      expect(line).not.toMatch(/^\s*(mkdir|printf|echo|cat|sed|awk|tr|git|curl|mv|cp)\s/);
-    }
-
-    // Both signals above are fence-shaped, so prose-form orchestration would
-    // slip past them: "Lowercase the title and write it to <path>" is a step
-    // this file performs, in a sentence. An imperative addressed TO THIS FILE
-    // reads differently from prose describing the skill ("The skill walks…",
-    // "`lib/slugify` — normalise the title"), so match the imperative mood at
-    // line start.
-    for (const line of body.split("\n")) {
-      expect(line).not.toMatch(/^\s*(Write|Create|Slugify|Lowercase|Replace|Resolve|Render) the /);
-    }
+    // The assertions above check that the file makes a promise. This checks the
+    // promise is kept — see thinShellViolations for what counts and why.
+    expect(thinShellViolations(bodyOnly(await readCommand(name)))).toEqual([]);
   });
 
   it("has a thin-shell check that goes red on orchestration", async () => {
-    // The strongest new assertion above was the only one without a mutation
-    // proof. Run its predicates against deliberately-orchestrating bodies so a
-    // later loosening of them shows up here rather than passing quietly.
+    // Runs the SAME predicate the assertion above runs, so dropping a signal
+    // from it breaks this proof rather than leaving it quietly green.
     const body = bodyOnly(await readCommand(name));
-    const holds = (candidate: string): boolean => {
-      const doing = candidate.split("## What this command does NOT do")[0]!;
-      if (/```\w+/.test(doing)) return false;
-      for (const line of doing.split("\n")) {
-        if (/^\s*(mkdir|printf|echo|cat|sed|awk|tr|git|curl|mv|cp)\s/.test(line)) return false;
-        if (/^\s*(Write|Create|Slugify|Lowercase|Replace|Resolve|Render) the /.test(line)) {
-          return false;
-        }
-      }
-      return true;
-    };
+    const cut = body.indexOf(COMMAND_NOT_DO_HEADING);
 
-    expect(holds(body)).toBe(true);
     for (const injected of [
-      "\n```bash\nmkdir -p \"$OUTPUT_DIR\"\n```\n",
+      '\n```bash\nmkdir -p "$OUTPUT_DIR"\n```\n',
+      "\n```\nnot the usage snippet\n```\n",
       "\nprintf '%s' \"$SLUG\" > out.md\n",
       "\nSlugify the title, then write it to docs/implementation/PENDING/tasks/<slug>.md.\n",
+      "\n1. Slugify the title and write it to the resolved path\n",
       "\nWrite the rendered markdown to the resolved path.\n",
     ]) {
-      // Injected BEFORE the does-NOT block: appending after it would land
-      // outside the region the check reads, and would prove nothing.
-      const [doing, notDoing] = [
-        body.split("## What this command does NOT do")[0]!,
-        body.slice(body.indexOf("## What this command does NOT do")),
-      ];
+      // Injected BEFORE the does-NOT block: that block legitimately names the
+      // forbidden things, so an injection after it proves nothing.
+      const mutated = body.slice(0, cut) + injected + body.slice(cut);
 
-      expect(holds(doing + injected + notDoing)).toBe(false);
+      expect(thinShellViolations(mutated)).not.toEqual([]);
     }
   });
 

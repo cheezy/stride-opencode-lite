@@ -594,7 +594,13 @@ fi
 listdrift=""
 for cmd in "$COMMANDS_DIR"/*.md; do
   named="$(sed -n 's/.*Activate the `\([a-z0-9-]*\)` skill.*/\1/p' "$cmd" | head -1)"
-  [ -d "$SKILLS_DIR/$named" ] || continue
+  if [ -z "$named" ] || [ ! -d "$SKILLS_DIR/$named" ]; then
+    # Not silently skipped: stage 1 already fails on this, and continuing here
+    # with an empty $named would make `[ -d "$SKILLS_DIR/" ]` true and print
+    # PASS after an "integer expression expected" error.
+    listdrift="$listdrift $(basename "$cmd"):unresolved-skill"
+    continue
+  fi
   want="$(grep -c '^### Step' "$SKILLS_DIR/$named/SKILL.md")"
   got="$(grep -c '^[0-9]\+\. ' "$cmd")"
   if [ "$got" -eq 0 ]; then
@@ -627,7 +633,7 @@ ctrl_list=0
 grep -Fq '| `--output-dir` | `docs/implementation/PENDING` |' "$CTRL/create-task.md" || ctrl_default=1
 ctrl_want="$(grep -c '^### Step' "$SKILLS_DIR/stride-opencode-lite-create-goal/SKILL.md")"
 ctrl_got="$(grep -c '^[0-9]\+\. ' "$CTRL/create-goal.md")"
-[ "$ctrl_got" -ne "$ctrl_want" ] && ctrl_list=1
+if [ "$ctrl_got" -ne "$ctrl_want" ]; then ctrl_list=1; fi
 if [ "$ctrl_skill" -eq 1 ] && [ "$ctrl_default" -eq 1 ] && [ "$ctrl_list" -eq 1 ]; then
   ok "commands: every command check detects a mutation (negative control)"
 else
