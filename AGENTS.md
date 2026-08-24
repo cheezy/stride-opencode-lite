@@ -336,7 +336,6 @@ that wrapper and default to the real paths.
 - **The manual test is owed.** No live OpenCode session was available, so nothing
   here establishes that these skills load, that the activation descriptions route
   the intended prompts, or that create-goal and create-task do not collide.
-- `commands/` is still empty, so no slash-command spelling is claimed anywhere.
 - `select_workflow_branch.md`, `task-enricher` and `hook-diagnostician` remain
   unported, and **no ported skill dispatches them**. The workflow skill references
   them only as unported: Step 1a performs the sparse check itself and routes a
@@ -368,6 +367,45 @@ that wrapper and default to the real paths.
   block, so a real bash guard belongs in `src/index.ts`.
 - `## email` in the scaffolded config is inert data `src/parser.ts` correctly
   never reads.
+
+## Commands
+
+| File | Activates | Argument hint |
+|---|---|---|
+| `commands/create-goal.md` | `stride-opencode-lite-create-goal` | `<prompt> [--requirements-dir <path>] [--output-dir <path>]` |
+| `commands/create-task.md` | `stride-opencode-lite-create-task` | `<prompt> [--requirements-dir <path>] [--output-dir <path>]` |
+| `commands/init.md` | `stride-opencode-lite-init` | `[--force]` |
+
+**Commands are thin shells, and that boundary is the point.** A command parses
+`$ARGUMENTS`, activates its skill, and surfaces the skill's stdout. It holds no
+decomposition, no slugification, no path resolution and no file writing. A
+command that starts making decisions has to be kept in sync with a skill that
+already makes them, and the two will disagree.
+
+Two consequences worth stating, because both are easy to get wrong:
+
+- **A command must not pre-validate or default an argument its skill already
+  owns.** Defaulting the prompt here would make the layers disagree about what an
+  empty invocation means.
+- **A command must not restate its skill's flow as a checklist.** A copy of the
+  steps goes stale the first time the skill changes, which is why the step prose
+  in all three is count-agnostic — it names what the skill does, never how many
+  steps it takes.
+
+**OpenCode command frontmatter carries only `description`.** Claude Code's
+`allowed-tools` and `argument-hint` keys have no OpenCode equivalent, so the
+usage line lives in the description and in the body's Step 1 rather than in a
+frontmatter key.
+
+### Adding a new command
+
+1. Create `commands/<name>.md` with a `description` frontmatter key, a single-`#`
+   title, `## What to do` with numbered `### Step` subsections, a `## Defaults`
+   table when the command has defaulted flags, and `## What this command does NOT do`.
+2. Create the matching skill. The skill owns the orchestration; the command file
+   stays a thin shell.
+3. Document it in README.md under `## Commands` with at least one copy-paste example.
+4. Add it to the repository layout notes and the table above.
 
 ### The activation-marker gate
 

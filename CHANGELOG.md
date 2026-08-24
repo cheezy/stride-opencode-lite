@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `create-goal`, `create-task` and `init` skills, with OpenCode frontmatter
   and activation descriptions, the decomposer dispatched by `@mention`, and
   `test/smoke.sh` enforcing template parity under `bun test`.
+- The `create-goal`, `create-task` and `init` commands as thin shells that parse
+  arguments and activate their skill, documented in the README with copy-paste
+  examples.
 - The activation-marker gate: `src/gate.ts` with a four-hour freshness window and
   a plugin-specific override, wired in after trigger detection and failing open so
   a missing marker never blocks a tool call.

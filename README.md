@@ -7,10 +7,9 @@ It provides the Stride task lifecycle (claiming, completing, and creating tasks
 and goals) as OpenCode skills, agents and commands, driven by a `.stride_lite.md`
 hook file.
 
-> **Status: in progress.** The repository layout, toolchain, hook parser,
-> executor and plugin entry point are in place. The skills, agents and commands
-> are not yet ported. This README is a stub and will be replaced when the port
-> is complete.
+> **Status: in progress.** The toolchain, hook parser, executor, plugin entry
+> point, activation-marker gate, helper specs, agents, skills and commands are in
+> place. This README will be expanded when the port is complete.
 
 ## Hook triggers
 
@@ -28,6 +27,31 @@ A blocking section aborts the tool call that triggered it when a command fails.
 file, a missing section, or an empty block is a clean no-op.
 
 Why these triggers were chosen, and what was rejected, is in [AGENTS.md](AGENTS.md).
+
+## Commands
+
+Each command is a thin shell: it parses arguments and activates the matching
+skill, which owns all of the orchestration.
+
+| Command | Activates | Writes |
+|---|---|---|
+| `create-goal` | `stride-opencode-lite-create-goal` | `<output-dir>/<slug>/goal.md` + one `taskN.md` per child task |
+| `create-task` | `stride-opencode-lite-create-task` | `<output-dir>/tasks/<slug>.md` |
+| `init` | `stride-opencode-lite-init` | `./.stride_lite.md` |
+
+```
+create-goal Add real-time notifications for board comments
+create-goal Add notifications --requirements-dir docs/reqs --output-dir build/goals
+create-task Fix the typo in the login button label
+create-task Harden the CSV importer --requirements-dir docs/reqs
+init
+init --force
+```
+
+Both create commands default `--requirements-dir` to `docs/requirements` and
+`--output-dir` to `docs/implementation/PENDING`. Neither POSTs to any API — the
+output is markdown on disk. `init` only writes the config file; it never runs a
+hook section.
 
 ## Requirements
 
