@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `create-goal`, `create-task` and `init` skills, with OpenCode frontmatter
   and activation descriptions, the decomposer dispatched by `@mention`, and
   `test/smoke.sh` enforcing template parity under `bun test`.
+- The activation-marker gate: `src/gate.ts` with a four-hour freshness window and
+  a plugin-specific override, wired in after trigger detection and failing open so
+  a missing marker never blocks a tool call.
 - The workflow orchestrator skill: the eight-step loop with its activation and
   termination contracts, the review cap, the decision matrix, the Bash scope and
   the PENDING-to-IMPLEMENTED archive move, with the hook-execution contract

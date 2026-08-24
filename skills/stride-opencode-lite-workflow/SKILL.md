@@ -67,7 +67,26 @@ Runs once per session, not once per task.
 1. **The exploratory-testing affirmative.** Step 6a can dispatch a session against a running application, and its safety gate needs an affirmative only the user can give: that the target is one they are **authorized to test and is not production**, how to reach it, and where test accounts live (a pointer, never pasted credentials). Ask here or never — once the loop begins this skill does not prompt between steps. If the answer is anything short of an explicit authorized-and-non-production affirmative, record that and move on; Step 6a then skips with no failure.
 2. **The `.gitignore` mention.** If `.exploratory/` is not ignored, say so once, briefly. **This is a statement, not a question — never wait on an answer, and never edit their `.gitignore` yourself.**
 
-**There is no activation marker.** stride-lite writes one because its hook script reads it before running a section. This plugin's hook layer (`src/index.ts`) reads no marker, so writing one here would be state that nothing consults, and every claim attached to it — that hooks silently no-op without it, a freshness window, a bypass variable — would be false in this port. A marker gate, if wanted, belongs in `src/index.ts`. Consequently there is nothing to clear on exit: an abnormal termination simply stops.
+3. **Write the activation marker.** The plugin's gate (`src/gate.ts`) reads it before running any hook section, so until it exists the three `.stride_lite.md` sections do not fire:
+
+```bash
+mkdir -p .stride-opencode-lite
+printf '{"session_id":"%s","started_at":"%s","pid":%d}\n' \
+  "${SESSION_ID:-$$}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" \
+  > .stride-opencode-lite/.orchestrator_active
+```
+
+**The marker is coordination, not security.** It stops a project's hook sections firing during ordinary work that merely touches a trigger. It is trivially forged — the command above is the whole of it — so it is a mode switch, never an access control.
+
+**The gate fails open.** With no marker, a stale one (older than four hours) or an unreadable one, no section runs and the triggering tool call proceeds untouched. A missing marker never breaks a tool call. `STRIDE_OPENCODE_LITE_ALLOW_DIRECT=1` bypasses the gate for plugin debugging and scripted CI.
+
+**Clear it on every exit path**, not only the clean one — `rm -f` is idempotent, so clear unconditionally rather than reasoning about whether Step 0 ran:
+
+```bash
+rm -f .stride-opencode-lite/.orchestrator_active
+```
+
+A crashed run leaves its marker behind, which is what the four-hour freshness window exists to bound.
 
 ### Step 1 — Select the next task
 
@@ -76,7 +95,7 @@ Read the goal directory. Iterate `task1.md`, `task2.md`, `task3.md`, ... in stri
 - If yes → this task is complete; skip to the next numeric task.
 - If no → this is the **next task**. Proceed to Step 2 with this file as the active task.
 
-If every `taskN.md` in the goal directory already has a `## Completion Summary` section, the goal is already complete — log this and stop (without running `after_goal` again).
+If every `taskN.md` in the goal directory already has a `## Completion Summary` section, the goal is already complete — log this and stop Clear the activation marker before stopping. (without running `after_goal` again).
 
 **Gap handling.** If the iteration finds `task1.md` and `task3.md` but no `task2.md`, treat this as a hard error: the goal directory is malformed: surface the gap to the user and stop without mutation. (The contract is "consecutive numeric files starting at 1"; do NOT silently skip gaps.)
 
@@ -96,7 +115,7 @@ The plugin registered with OpenCode auto-fires the `## before_task` section from
 
 You do **NOT** read `.stride_lite.md` or execute its hook sections directly in this step — the harness does that. Missing `.stride_lite.md`, a missing `## before_task` section, or an empty fenced block all degrade to a clean no-op (exit 0) so the dispatch proceeds. A failing command emits a structured failure JSON on stdout for your Step 8 Completion Summary to reference.
 
-If Step 3's dispatch is blocked by a `before_task` failure, surface the plugin's structured failure JSON directly and stop. (stride-lite triages it with a `hook-diagnostician` agent; that agent is not ported here, and triage was always an improvement on the raw dump rather than a precondition — a blocking section's failure stops the loop; an `after_goal` failure is reported and does not.)
+If Step 3's dispatch is blocked by a `before_task` failure, surface the plugin's structured failure JSON directly and stop Clear the activation marker before stopping.. (stride-lite triages it with a `hook-diagnostician` agent; that agent is not ported here, and triage was always an improvement on the raw dump rather than a precondition — a blocking section's failure stops the loop; an `after_goal` failure is reported and does not.)
 
 
 ### Step 3 — Dispatch `@task-explorer` (decision matrix)
@@ -174,7 +193,7 @@ Follow the acceptance criteria as your definition of done. Replicate the pattern
 You do not read `.stride_lite.md` and you do not run its commands in this step. The plugin fires the section; you observe the result.
 Same auto-fire pattern as Step 2, but the harness runs the `## after_task` section as a **`tool.execute.before`** hook on the Step 6 `@task-reviewer` dispatch of `@task-reviewer`. Same blocking semantics — a non-zero exit blocks the reviewer dispatch, which surfaces to you as a Step 6 failure.
 
-If the reviewer dispatch is blocked by an `after_task` failure, surface the plugin's structured failure JSON directly and stop. (stride-lite triages it with a `hook-diagnostician` agent; that agent is not ported here, and triage was always an improvement on the raw dump rather than a precondition — a blocking section's failure stops the loop; an `after_goal` failure is reported and does not.) This is the mixed-output case the agent is most useful for — an `after_task` section is typically a test suite and a linter, and their failures rarely want fixing in the order they printed. Triage does not unblock: the failure is still blocking and the workflow still stops.
+If the reviewer dispatch is blocked by an `after_task` failure, surface the plugin's structured failure JSON directly and stop Clear the activation marker before stopping.. (stride-lite triages it with a `hook-diagnostician` agent; that agent is not ported here, and triage was always an improvement on the raw dump rather than a precondition — a blocking section's failure stops the loop; an `after_goal` failure is reported and does not.) This is the mixed-output case the agent is most useful for — an `after_task` section is typically a test suite and a linter, and their failures rarely want fixing in the order they printed. Triage does not unblock: the failure is still blocking and the workflow still stops.
 
 You do **NOT** execute `.stride_lite.md` hook sections directly in this step. The harness handles it; a failing command emits structured failure JSON for your Step 8 Completion Summary.
 
@@ -544,7 +563,7 @@ Otherwise, read the active task file's `## Review Report` section. Extract the f
 - If `status == "approved"` → proceed to Step 8.
 - If `status == "changes_requested"` → increment the `review_iteration` counter (initialized to 0 at Step 2) and:
   - If `review_iteration < max_review_iterations` (default 3) → loop back to **Step 4** (Implementation). Make further code changes addressing the reviewer's issues. Then re-run Steps 5, 6, **6c** and 7 in sequence. **6c is in the ordinary re-run set** because it runs on every pass; 6a and 6b stay out under their at-most-once rule.
-  - If `review_iteration >= max_review_iterations` → stop the workflow. Surface the failing review's prose summary line + the list of unresolved issues to the user. Do NOT write a Completion Summary; the task remains incomplete.
+  - If `review_iteration >= max_review_iterations` → stop the workflow. Clear the activation marker before stopping. Surface the failing review's prose summary line + the list of unresolved issues to the user. Do NOT write a Completion Summary; the task remains incomplete.
 
 **Session-escalation branch.** If Step 6a returned a Critical finding this task **introduced** — by Step 6a's provenance test, not by what the finding says about itself — treat it exactly as `changes_requested`, whatever the `## Review Report` said: increment `review_iteration`, loop back to **Step 4**, fix the defect, then re-run Steps 5, 6 and 6a. **The re-run must actually re-reach the defect:** re-execute the finding's own minimal repro, because a session that stopped on its budget before getting there has verified nothing — raise the budget and run it again rather than reading a truncated session as confirmation that the fix holds. The cap is the same `max_review_iterations`, and hitting it has the same terminal shape:, stop, surface the finding, write no Completion Summary.
 
@@ -1081,7 +1100,7 @@ Forgeable by any local process — a coordination signal, NEVER an authorization
 
 Recorded so a reader does not mistake any of them for an oversight:
 
-- **No activation marker.** This plugin's hook layer reads none, so writing one would be state nothing consults.
+- **The activation marker is coordination, not a security boundary.** It gates whether hook sections fire; it is trivially forged and is never an access control.
 - **No `task-enricher` dispatch.** Step 1a performs the sparse check itself and routes a sparse task to the `full` matrix row; the agent is not ported.
 - **No `hook-diagnostician` dispatch.** Steps 2, 5 and 8 surface the plugin's structured failure JSON directly; triage was always an improvement on the raw dump, never a precondition.
 - **No hook context variables**, because the executor takes no environment option.

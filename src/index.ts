@@ -23,6 +23,7 @@ import { basename } from "node:path";
 
 import type { Plugin } from "@opencode-ai/plugin";
 
+import { gateHookExecution } from "./gate";
 import { parseStrideLiteFile, type HookName } from "./parser";
 import { executeHookCommands, hookExitCode, type HookResult } from "./hook-exec";
 
@@ -281,6 +282,19 @@ export const StrideOpenCodeLitePlugin: Plugin = async (input) => {
       const decision = routeBefore(hookInput, hookOutput);
       if (!decision) return;
 
+      // The gate runs only once a trigger has matched, and it FAILS OPEN: with
+      // no marker, a stale one, or an unreadable one, no section runs and this
+      // tool call proceeds untouched. Blocking here instead would mean that
+      // merely installing the plugin breaks ordinary edits in any project that
+      // is not mid-workflow.
+      const gate = gateHookExecution({ projectDir });
+      if (gate.decision === "skip") {
+        process.stderr.write(
+          `stride-opencode-lite: ${decision.hook} not run — ${gate.reason}\n`,
+        );
+        return;
+      }
+
       const result = await runSection(projectDir, decision.hook);
       if (!result) return;
 
@@ -298,6 +312,14 @@ export const StrideOpenCodeLitePlugin: Plugin = async (input) => {
     ): Promise<void> => {
       const decision = routeAfter(hookInput, hookOutput);
       if (!decision) return;
+
+      const gate = gateHookExecution({ projectDir });
+      if (gate.decision === "skip") {
+        process.stderr.write(
+          `stride-opencode-lite: ${decision.hook} not run — ${gate.reason}\n`,
+        );
+        return;
+      }
 
       // The advisory section never blocks, by three independent mechanisms:
       // this phase cannot roll back a tool call, hookExitCode returns 0 for

@@ -18,6 +18,7 @@ import {
   routeAfter,
   routeBefore,
 } from "./index";
+import { MARKER_DIR, MARKER_FILE, OVERRIDE_ENV } from "./gate";
 
 const scratchDirs: string[] = [];
 
@@ -51,6 +52,19 @@ const loadPlugin = async (directory: string) =>
 
 const writeConfig = async (dir: string, section: string, block: string) => {
   await Bun.write(join(dir, CONFIG_FILENAME), `## ${section}\n\n\`\`\`bash\n${block}\n\`\`\`\n`);
+};
+
+/**
+ * Arm the activation-marker gate for a scratch project.
+ *
+ * The gate fails open, so without this a hook section simply does not run —
+ * which is the behaviour the two gate tests below assert deliberately.
+ */
+const armMarker = async (dir: string) => {
+  await Bun.write(
+    join(dir, MARKER_DIR, MARKER_FILE),
+    JSON.stringify({ session_id: "test", started_at: new Date().toISOString(), pid: 1 }),
+  );
 };
 
 describe("payload extraction", () => {
@@ -339,6 +353,7 @@ describe("plugin handlers", () => {
     const dir = await scratchDir();
     const marker = join(dir, "before.marker");
     await writeConfig(dir, "before_task", `touch ${marker}`);
+    await armMarker(dir);
 
     const hooks = await loadPlugin(dir);
     const e = skillEvent(BEFORE_TASK_SKILL);
@@ -351,6 +366,7 @@ describe("plugin handlers", () => {
     const dir = await scratchDir();
     const marker = join(dir, "should-not-exist");
     await writeConfig(dir, "before_task", `touch ${marker}`);
+    await armMarker(dir);
 
     const hooks = await loadPlugin(dir);
     await hooks["tool.execute.before"]({ tool: "grep" }, { args: { pattern: "x" } });
@@ -361,6 +377,7 @@ describe("plugin handlers", () => {
   it("THROWS when a blocking section fails, aborting the tool call", async () => {
     const dir = await scratchDir();
     await writeConfig(dir, "before_task", 'sh -c "exit 3"');
+    await armMarker(dir);
 
     const hooks = await loadPlugin(dir);
     const e = skillEvent(BEFORE_TASK_SKILL);
@@ -371,6 +388,7 @@ describe("plugin handlers", () => {
   it("carries the structured result in what it throws", async () => {
     const dir = await scratchDir();
     await writeConfig(dir, "after_task", 'sh -c "exit 5"');
+    await armMarker(dir);
 
     const hooks = await loadPlugin(dir);
     const e = skillEvent(AFTER_TASK_SKILL);
@@ -390,6 +408,7 @@ describe("plugin handlers", () => {
   it("does NOT throw when a blocking section succeeds", async () => {
     const dir = await scratchDir();
     await writeConfig(dir, "before_task", "true");
+    await armMarker(dir);
 
     const hooks = await loadPlugin(dir);
     const e = skillEvent(BEFORE_TASK_SKILL);
@@ -400,6 +419,7 @@ describe("plugin handlers", () => {
   it("does NOT throw when the section is missing entirely", async () => {
     const dir = await scratchDir();
     await writeConfig(dir, "after_goal", "true");
+    await armMarker(dir);
 
     const hooks = await loadPlugin(dir);
     const e = skillEvent(BEFORE_TASK_SKILL);
@@ -411,6 +431,7 @@ describe("plugin handlers", () => {
     const dir = await scratchDir();
     const marker = join(dir, "goal.marker");
     await writeConfig(dir, "after_goal", `touch ${marker}`);
+    await armMarker(dir);
     await mkdir(join(dir, "goals"), { recursive: true });
 
     const hooks = await loadPlugin(dir);
@@ -423,6 +444,7 @@ describe("plugin handlers", () => {
   it("NEVER throws when the advisory section fails, but DOES report it", async () => {
     const dir = await scratchDir();
     await writeConfig(dir, "after_goal", 'sh -c "exit 9"');
+    await armMarker(dir);
 
     const hooks = await loadPlugin(dir);
     const e = writeEvent("write", join(dir, GOAL_FILENAME), `${COMPLETION_HEADING}\n`);
@@ -451,6 +473,61 @@ describe("plugin handlers", () => {
   });
 });
 
+describe("the activation-marker gate", () => {
+  it("runs no section and does not block the call when there is no marker", async () => {
+    const dir = await scratchDir();
+    const marker = join(dir, "should-not-exist");
+    await Bun.write(
+      join(dir, CONFIG_FILENAME),
+      `## before_task\n\n\`\`\`bash\ntouch ${marker}\n\`\`\`\n`,
+    );
+    // Deliberately NOT armed.
+
+    const hooks = await loadPlugin(dir);
+    const e = skillEvent(BEFORE_TASK_SKILL);
+
+    // Fails open: the section does not run, and the tool call is untouched.
+    await expect(hooks["tool.execute.before"](e.input, e.output)).resolves.toBeUndefined();
+    expect(await Bun.file(marker).exists()).toBe(false);
+  });
+
+  it("does not block even when the ungated section would have failed", async () => {
+    const dir = await scratchDir();
+    await Bun.write(
+      join(dir, CONFIG_FILENAME),
+      '## before_task\n\n```bash\nsh -c "exit 3"\n```\n',
+    );
+
+    const hooks = await loadPlugin(dir);
+    const e = skillEvent(BEFORE_TASK_SKILL);
+
+    // Without the gate this throws. With no marker it must not.
+    await expect(hooks["tool.execute.before"](e.input, e.output)).resolves.toBeUndefined();
+  });
+
+  it("runs the section on the override with no marker present", async () => {
+    const dir = await scratchDir();
+    const marker = join(dir, "override.marker");
+    await Bun.write(
+      join(dir, CONFIG_FILENAME),
+      `## before_task\n\n\`\`\`bash\ntouch ${marker}\n\`\`\`\n`,
+    );
+
+    const previous = process.env[OVERRIDE_ENV];
+    process.env[OVERRIDE_ENV] = "1";
+    try {
+      const hooks = await loadPlugin(dir);
+      const e = skillEvent(BEFORE_TASK_SKILL);
+      await hooks["tool.execute.before"](e.input, e.output);
+
+      expect(await Bun.file(marker).exists()).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env[OVERRIDE_ENV];
+      else process.env[OVERRIDE_ENV] = previous;
+    }
+  });
+});
+
 describe("no API, cache or credential surface", () => {
   const forbidden = [
     "stride_auth",
@@ -466,7 +543,7 @@ describe("no API, cache or credential surface", () => {
 
   // Criterion 7 says "anywhere in the plugin", so every shipped module is
   // scanned, not just the entry point.
-  const pluginModules = ["index.ts", "parser.ts", "hook-exec.ts"];
+  const pluginModules = ["index.ts", "parser.ts", "hook-exec.ts", "gate.ts"];
 
   for (const moduleName of pluginModules) {
     it(`${moduleName} contains none of the forbidden tokens`, async () => {
@@ -494,6 +571,7 @@ describe("no API, cache or credential surface", () => {
     const imports = [...source.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
 
     expect([...new Set(imports)].sort()).toEqual([
+      "./gate",
       "./hook-exec",
       "./parser",
       "@opencode-ai/plugin",

@@ -480,20 +480,34 @@ fi
 
 fi
 
-# --- The no-marker decision, pinned (negative) ---------------------------
-# This port writes no activation marker. That decision lived in prose in three
-# places and was enforced nowhere, which is exactly why a marker instruction
-# regenerated in the walkthrough and still passed a green suite. Pin it.
+# --- The activation marker, pinned (inverted from the earlier no-marker rule)
+# This stage previously asserted that NO marker instruction survived, because
+# the plugin read no marker and the instruction kept regenerating. The gate task
+# reversed that decision, so the stage is INVERTED rather than deleted: a pinned
+# decision that reverses should force the reversal to be acknowledged, not
+# quietly dropped. It now asserts the workflow both arms and clears the marker.
 if [ -s "$WORKFLOW" ]; then
-  marker_orders="$(grep -ciE 'clear the marker|marker clear|write the marker|orchestrator_active|hook gate is closed' "$WORKFLOW")"
-  if [ "$marker_orders" -eq 0 ]; then
-    ok "workflow: no activation-marker instruction survives"
+  writes="$(grep -c 'stride-opencode-lite/\.orchestrator_active' "$WORKFLOW")"
+  clears="$(grep -c 'Clear the activation marker' "$WORKFLOW")"
+  # Distinct from the full plugin's path and variable — a project may have both.
+  collides=0
+  grep -qE '(^|[^-])\.stride/\.orchestrator_active' "$WORKFLOW" && collides=1
+  grep -q 'STRIDE_ALLOW_DIRECT' "$WORKFLOW" && collides=1
+  if [ "$writes" -ge 2 ] && [ "$clears" -ge 3 ] && [ "$collides" -eq 0 ]; then
+    ok "workflow: the activation marker is written at Step 0 and cleared on every stop"
   else
-    nope "workflow: no activation-marker instruction survives" \
-         "$marker_orders marker instruction(s) present in a file that declares there is no marker"
+    nope "workflow: the activation marker is written at Step 0 and cleared on every stop" \
+         "$writes path reference(s), $clears clear instruction(s), collides-with-full-plugin=$collides"
+  fi
+
+  if grep -q 'coordination, not security' "$WORKFLOW" && grep -q 'fails open' "$WORKFLOW"; then
+    ok "workflow: the marker is documented as coordination and as fail-open"
+  else
+    nope "workflow: the marker is documented as coordination and as fail-open" \
+         "the coordination-not-security or the fail-open statement is missing"
   fi
 else
-  nope "workflow: no activation-marker instruction survives" "workflow file is empty"
+  nope "workflow: the activation marker is written at Step 0 and cleared on every stop" "workflow file is empty"
 fi
 
 # --- The terminal-move grant is a GRANT, not prose mentioning a verb -----

@@ -369,6 +369,35 @@ that wrapper and default to the real paths.
 - `## email` in the scaffolded config is inert data `src/parser.ts` correctly
   never reads.
 
+### The activation-marker gate
+
+`src/gate.ts` reads `.stride-opencode-lite/.orchestrator_active` before any hook
+section runs. The workflow skill writes it at Step 0 and clears it on every exit
+path, including the review-cap stop and each hard-error stop.
+
+**It is coordination, not a security boundary.** It stops a project's
+`.stride_lite.md` sections firing during ordinary work that merely touches a
+trigger. Writing the marker is a one-line shell command, so it is trivially
+forged — treat it as a mode switch and never as an access control. The security
+boundaries in this plugin are the agents' `tools` maps and `permission` blocks,
+not this.
+
+**It fails open, deliberately, and differs from the full plugin here.** With no
+marker, a stale one (older than four hours) or an unreadable one, no section runs
+and **the triggering tool call proceeds untouched**. The full Stride plugin's
+gate fails closed and throws, because there it also guards direct skill
+activation. Failing closed here would mean that merely installing this plugin
+starts breaking ordinary edits in any project that is not mid-workflow.
+
+**The path and the override are distinct from the full plugin's**
+(`.stride/.orchestrator_active` and `STRIDE_ALLOW_DIRECT`) because a project may
+have both installed, and a shared path would let one plugin's workflow arm the
+other's hooks. This port uses `STRIDE_OPENCODE_LITE_ALLOW_DIRECT=1` to bypass the
+gate for plugin debugging and scripted CI.
+
+A crashed run leaves its marker behind, which is exactly what the freshness
+window bounds — an existing marker is never taken as evidence of a live session.
+
 ### Deliberate divergence from stride-lite
 
 `lib/load_requirements_dir.md` is **not** byte-identical to its stride-lite
