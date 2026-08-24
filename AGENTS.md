@@ -262,6 +262,86 @@ the literal reading would be a *narrowing* that leaves both agents able to
 compute a report and unable to emit it. Recorded here so it can be reversed
 deliberately rather than discovered.
 
+## Skills
+
+| Directory | Activates for | Writes | Source |
+|---|---|---|---|
+| `skills/stride-opencode-lite-create-goal/` | creating a goal, decomposing an initiative into tasks on disk | `<output-dir>/<slug>/goal.md` + `taskN.md` | stride-lite |
+| `skills/stride-opencode-lite-create-task/` | creating one standalone task or defect | `<output-dir>/tasks/<slug>.md` | stride-lite |
+| `skills/stride-opencode-lite-init/` | scaffolding `.stride_lite.md` | `./.stride_lite.md` | stride-lite |
+| `skills/stride-opencode-lite-workflow/` | — | — | **stub**, owned by the workflow-port task |
+
+**Naming is a hard rule.** A skill's frontmatter `name` MUST equal its directory
+basename, and both MUST carry this plugin's identity (`stride-opencode-lite-*`),
+because OpenCode's matcher keys on `name`. The sibling copilot port shipped
+`stride-lite-*` directories after renaming its plugin and is paying to undo it.
+Pinned by `test/skills.test.ts`.
+
+**Frontmatter shape:** `name`, `description`, `license: MIT`,
+`compatibility: opencode`, `metadata.category` / `metadata.version`.
+`skills_version` is a Claude Code key and must not appear. (The workflow stub
+predates this and still carries only `name`/`description` — owed to the
+workflow-port task.)
+
+### The never-diverge template rule
+
+The `taskN.md` template is reproduced verbatim in **both** create skills. It must
+stay byte-identical to the other copy **and** to stride-lite's. Invariants: **81
+lines, 1531 bytes, 14 `## ` headings, sha256
+`f5ff7db2802fbe5c9ac4d8ffafddc45ea09bdbca55541aed02f54552567cfedd`.** A change
+lands in both files in the same commit.
+
+`test/smoke.sh` enforces it, and is built to not be vacuous — the sibling port
+shipped a single-extractor version that compared one extraction against another
+produced the same way, so when both came back empty, empty equalled empty and the
+check passed while guarding nothing. This one uses two **independently coded**
+extractors (an awk state machine against a sed window pipeline, different anchors
+and different toolchains), a separate non-empty precondition per side, structural
+completeness checks that catch truncation and over-capture, a sha256 pin, and two
+negative controls.
+
+Two mutations must turn it red, and both are exercised by `test/smoke.test.ts`:
+changing `<task.description>` to `<task.desc>` in the create-task copy fails
+byte-identity **and** the sha pin; deleting create-goal's closing fence fails the
+structural checks. The sha pin is what carries "byte-identical to stride-lite's"
+for a consumer, who will never have stride-lite on disk — the cross-check against
+it **SKIPs** with a stated reason when absent, and is never credited as a pass.
+
+`test/smoke.sh` runs under `bun test` via `test/smoke.test.ts`. A `.sh` the test
+runner never invokes is free to rot, and a parity check nobody runs guards
+nothing. Test seams `STRIDE_SMOKE_SKILLS_DIR` and `STRIDE_LITE_ROOT` exist for
+that wrapper and default to the real paths.
+
+### Init divergences from stride-lite
+
+- **The host-execution story is rewritten, not translated.** The source describes
+  Claude Code's harness, `hooks.json` and an `exit 2` that stops a dispatch. Here
+  the plugin fires sections from `src/index.ts`, and a blocking section's failure
+  throws from `tool.execute.before`, aborting the tool call; `after_goal` runs in
+  `tool.execute.after` and can never roll one back.
+- **The hook-context-variable promise is inverted.** The source's template
+  comments advertise `HOOK_NAME`, `TASK_FILE`, `TASK_TITLE` and friends.
+  `src/hook-exec.ts` takes no `env` option, so this plugin supplies none and a
+  command referencing one sees an empty value. Saying so is the fix; translating
+  the promise would have shipped a documented falsehood.
+- **The clobber guard now tests `-L` as well as `-e`.** `test -e` dereferences, so
+  a `.stride_lite.md` that is a **dangling** symlink reads as *absent*, the skill
+  takes the no-collision branch, and a plain `>` redirection follows the link and
+  writes outside the working directory — which the skill promises never to do.
+  Both the refusal branch and the `--force` branch are now symlink-aware. The same
+  hole exists in stride-lite and should be fixed at source.
+
+### Known gaps
+
+- **The manual test is owed.** No live OpenCode session was available, so nothing
+  here establishes that these skills load, that the activation descriptions route
+  the intended prompts, or that create-goal and create-task do not collide.
+- `commands/` is still empty, so no slash-command spelling is claimed anywhere.
+- `select_workflow_branch.md`, `task-enricher` and `hook-diagnostician` remain
+  unported; no ported skill calls them.
+- `## email` in the scaffolded config is inert data `src/parser.ts` correctly
+  never reads.
+
 ### Deliberate divergence from stride-lite
 
 `lib/load_requirements_dir.md` is **not** byte-identical to its stride-lite

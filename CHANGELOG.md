@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository scaffold: `package.json`, `tsconfig.json`, `.gitignore`, `LICENSE`,
   a `README` stub and this changelog, plus the empty `skills/`, `agents/`,
   `commands/`, `lib/` and `fixtures/` directories the port fills in.
+- The `create-goal`, `create-task` and `init` skills, with OpenCode frontmatter
+  and activation descriptions, the decomposer dispatched by `@mention`, and
+  `test/smoke.sh` enforcing template parity under `bun test`.
 - The three ported agents — `create-decomposer` (no tool access), `task-explorer`
   and `task-reviewer` — in OpenCode's agent format, with their tool grants
   declared explicitly and asserted by tests.
