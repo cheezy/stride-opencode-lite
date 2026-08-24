@@ -112,11 +112,42 @@ describe("package.json", () => {
     ]);
   });
 
-  it("starts below the version this plugin will first ship as", async () => {
+  it("states its version in package.json and nowhere else", async () => {
     const pkg = await readJson("package.json");
 
-    // The scaffold predates the first shipped release (0.1.0).
-    expect(pkg.version).toBe("0.0.0");
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+
+    // package.json is the single source. A version duplicated into a skill
+    // body, a README badge or an installer goes stale the next release, and
+    // nothing would catch it.
+    const proc = Bun.spawnSync(
+      ["git", "grep", "-l", "--fixed-strings", pkg.version, "--",
+       "*.md", "*.ts", "*.sh", "*.ps1"],
+      { cwd: repoRoot },
+    );
+    const files = new TextDecoder()
+      .decode(proc.stdout)
+      .split("\n")
+      .filter(Boolean)
+      // This file names the version inside the assertion that governs it.
+      .filter((f) => f !== "test/scaffold.test.ts")
+      // The CHANGELOG names it by definition, and the test below requires its
+      // newest released heading to MATCH package.json — so it is a second
+      // statement that cannot drift, rather than a duplicate that can.
+      .filter((f) => f !== "CHANGELOG.md");
+
+    expect(files).toEqual([]);
+  });
+
+  it("matches the CHANGELOG's newest released entry", async () => {
+    const pkg = await readJson("package.json");
+    const changelog = await Bun.file(join(repoRoot, "CHANGELOG.md")).text();
+
+    // The first version heading that is not [Unreleased] is what shipped.
+    const released = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m);
+
+    expect(released).not.toBeNull();
+    expect(released![1]).toBe(pkg.version);
   });
 });
 

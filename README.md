@@ -265,6 +265,55 @@ agents' `tools` maps and `permission` blocks.
   running one there would execute it twice.
 - **Not published to npm.** Install it from the repository.
 
+## Not yet ported from stride-lite
+
+This release is built from what `stride-lite` ships today. A separate parity
+sweep (goal G401) will move `stride-lite` further ahead, so this list is a
+snapshot, not a permanent boundary. It is here so the next person to compare the
+two plugins can tell **deliberate scope from oversight** without diffing them.
+
+**Artifacts that do not exist here.** Everything else in `skills/`, `agents/`,
+`commands/` and `lib/` is present under both names.
+
+| Missing | What stride-lite uses it for | Consequence here |
+|---|---|---|
+| `agents/task-enricher.md` | Fills in a sparse task file before work starts | Step 1a performs the sparse check itself and routes the task to the `full` matrix row instead of enriching it |
+| `agents/hook-diagnostician.md` | Triages a failed hook section into a fix plan | Steps 2, 5 and 8 surface the plugin's structured failure JSON directly |
+| `lib/select_workflow_branch.md` | A reference implementation its smoke suite diffs the decision matrix against | The matrix in the workflow skill is normative on its own; there is no second copy, so nothing can drift and nothing is checked |
+
+**Behaviours that differ.**
+
+- **No hook context variables.** stride-lite exports nine (`HOOK_NAME`,
+  `TASK_TITLE`, `GOAL_SLUG` and so on) to every hook command. This plugin's
+  executor takes no environment option at all, so a command referencing one sees
+  an empty value rather than a task detail. This is the difference most likely to
+  surprise someone porting a `.stride_lite.md` across.
+- **The hook budget is per command, not per section.** Each command gets 60
+  seconds; stride-lite budgets the invocation as a whole.
+- **The two blocking triggers are dormant.** `before_task` and `after_task` key
+  on the activation of skills by those names, but the explorer and reviewer ship
+  here as *agents* dispatched by `@mention`, and a mention emits no
+  `tool.execute.*` event. So those two sections do not fire on this build.
+  `after_goal` is unaffected. This is the largest functional gap in the release.
+- **No `hooks/` directory.** stride-lite executes sections from a shell script
+  driven by Claude Code's `hooks.json`. That mechanism has no OpenCode
+  equivalent, so the logic was rewritten in `src/` against the plugin API. A
+  rewrite for a different host, not an omission.
+
+**Present, and worth saying so explicitly: the deep security-considerations
+review.** Step 6c — the gated pass that asks a specialist, per listed
+consideration, whether the changed code actually mitigates it, with the
+fail-closed verdict handling and the security-escalation branch — **is** ported,
+at `skills/stride-opencode-lite-workflow/SKILL.md`. It is the same control as
+stride-lite's, not a reduced one. It is named here because a gap list that
+stayed silent about it would invite the opposite assumption in either direction.
+Its one dependency is external: it dispatches a security-review plugin, and it
+skips cleanly, by design, when that plugin is not installed.
+
+**Nothing here has been exercised in a live OpenCode session.** The full list of
+what that leaves unverified is in the Known gaps section of
+[AGENTS.md](AGENTS.md), which is the authority.
+
 ## Requirements
 
 - [Bun](https://bun.sh)

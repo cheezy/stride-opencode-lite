@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-24
+
+First release. The OpenCode port of `stride-lite`: it turns a prompt into
+Stride-shaped goal and task markdown on disk, and runs the hook sections a
+project writes in `.stride_lite.md`. It talks to no server and reads no
+credentials.
+
+**Installing it is two steps, and neither works alone.** Registering the plugin
+in `opencode.json` starts the hook layer but creates no skills; OpenCode does
+not auto-discover skills or agents from inside an installed plugin. Running
+`install.sh` (or `install.ps1`) copies them to the discovery paths. Skipping the
+second step is a silent partial install — the plugin loads, nothing errors, and
+the commands simply are not there. See the README.
+
+**This release is built from what `stride-lite` ships today, and is not at
+parity with it.** The behaviours it does not have are listed in the README's
+"Not yet ported from stride-lite" section rather than left for a future reader
+to rediscover by diffing the two plugins.
+
 ### Added
+
 - `install.sh` and `install.ps1`: step two of the two-step install, with a
   per-path clobber refusal that copies nothing when it refuses, and a post-copy
   verification that compares bytes and exits non-zero naming every missing or

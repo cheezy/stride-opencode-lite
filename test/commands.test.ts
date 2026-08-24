@@ -411,6 +411,9 @@ describe("README", () => {
       "````markdown",
       // The hook trigger table itself.
       "| Section | OpenCode event | Trigger | Blocking |",
+      // The gap section's dormancy bullet. Vouched deliberately: it states the
+      // triggers do NOT fire, and says why.
+      "**The two blocking triggers are dormant.**",
     ];
 
     const triggerChunks = readme
