@@ -1,0 +1,10 @@
+# The vendored fixtures and the skill templates are asserted byte for byte
+# against stride-lite. Git's own EOL normalization would rewrite them on a
+# clone with core.autocrlf=true and break that assertion on a checkout nobody
+# edited, so it is disabled here.
+#
+# This PREVENTS git from normalizing. It does not normalize inside the check —
+# test/smoke.sh still compares raw bytes and still detects a CR, which is what
+# the task's "no whitespace or line-ending normalization" rule requires.
+*.md -text
+fixtures/** -text

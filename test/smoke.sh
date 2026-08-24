@@ -30,17 +30,28 @@
 # Test seams, defaulting to the real paths:
 #   STRIDE_SMOKE_SKILLS_DIR    point the parity stage at a copied skills tree
 #   STRIDE_SMOKE_COMMANDS_DIR  point the command stage at a copied commands tree
+#   STRIDE_SMOKE_FIXTURES_DIR  point the fixture stages at a copied fixtures tree
 #   STRIDE_LITE_ROOT         where to find stride-lite for the cross-check
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 SKILLS_DIR="${STRIDE_SMOKE_SKILLS_DIR:-$REPO_ROOT/skills}"
 COMMANDS_DIR="${STRIDE_SMOKE_COMMANDS_DIR:-$REPO_ROOT/commands}"
+FIXTURES_DIR="${STRIDE_SMOKE_FIXTURES_DIR:-$REPO_ROOT/fixtures}"
 STRIDE_LITE_ROOT="${STRIDE_LITE_ROOT:-$REPO_ROOT/../stride-lite}"
 
 # The stride-lite taskN template, pinned. This is the assertion that survives
 # stride-lite being absent, which it always is for a consumer.
 EXPECTED_TASKN_SHA256=f5ff7db2802fbe5c9ac4d8ffafddc45ea09bdbca55541aed02f54552567cfedd
+
+# The goal.md template block, pinned the same way. Until W2042 this block was
+# extracted by nothing and compared to nothing — it could have been rewritten
+# and the whole suite would have stayed green.
+EXPECTED_GOAL_TEMPLATE_SHA256=63b444f8cb7c84b0a2d8ec39ceafc8e7d74c8e80433f530e5adf7168b4273234
+
+# Changing any pinned hash in this file is a CROSS-PORT DECISION. stride-lite,
+# stride-copilot-lite and this port must land the change together, in the same
+# change set. If you are updating a hash to make a test pass, stop.
 
 PASS=0
 FAIL=0
@@ -226,6 +237,117 @@ else
   skipped "the hash pin rejects altered content (negative control)" "parity not credited"
   skipped "the parity comparison detects a one-byte divergence (negative control)" "parity not credited"
   skipped "an empty extraction is refused, not credited (negative control)" "parity not credited"
+fi
+
+# --- The goal.md template ------------------------------------------------
+# Same shape as the taskN parity block above: two independently-coded
+# extractors, a non-empty precondition, a structural gate, and a hash pin. This
+# template lives in exactly ONE place in this port (create-task reproduces only
+# the task template), so there is no second copy to diff against — the two
+# extractors guard the extraction, and the pin carries "identical to
+# stride-lite's".
+extract_goal_a() {  # awk forward state machine
+  awk '
+    /^### goal\.md template$/ { armed = 1; next }
+    armed && /^```markdown$/  { inblock = 1; next }
+    inblock && /^```$/        { exit }
+    inblock                   { print }
+  ' "$1"
+}
+
+extract_goal_b() {  # sed window between the two template headings
+  sed -n '/^### goal\.md template$/,/^### taskN\.md template$/p' "$1" \
+    | sed -n '/^```markdown$/,/^```$/p' \
+    | sed '1d;$d'
+}
+
+matches_goal_template_hash() {
+  [ "$(shasum -a 256 "$1" | cut -d' ' -f1)" = "$EXPECTED_GOAL_TEMPLATE_SHA256" ]
+}
+
+goal_template_complete() {
+  [ "$(grep -c '^## ' "$1")" -eq 7 ] || return 1
+  [ "$(wc -l < "$1" | tr -d ' ')" -eq 33 ] || return 1
+  grep -q '^### ' "$1" && return 1
+  # Over-capture guard: this line lives outside the fence.
+  grep -q 'The "Tasks" section' "$1" && return 1
+  return 0
+}
+
+GOAL_TPL_CREDITED=0
+extract_goal_a "$GOAL_SKILL" > "$WORK/gt_a.txt" 2>/dev/null
+extract_goal_b "$GOAL_SKILL" > "$WORK/gt_b.txt" 2>/dev/null
+
+if [ -s "$WORK/gt_a.txt" ] && [ -s "$WORK/gt_b.txt" ]; then
+  ok "the goal.md template is extracted non-empty by both extractors"
+  GOAL_TPL_CREDITED=1
+else
+  nope "the goal.md template is extracted non-empty by both extractors" \
+       "awk extractor $(wc -c < "$WORK/gt_a.txt") bytes, sed extractor $(wc -c < "$WORK/gt_b.txt") bytes"
+fi
+
+if [ "$GOAL_TPL_CREDITED" -eq 1 ]; then
+  if goal_template_complete "$WORK/gt_a.txt"; then
+    ok "the goal.md template is structurally complete (33 lines, 7 sections)"
+  else
+    nope "the goal.md template is structurally complete (33 lines, 7 sections)" \
+         "$(grep -c '^## ' "$WORK/gt_a.txt") sections, $(wc -l < "$WORK/gt_a.txt" | tr -d ' ') lines"
+  fi
+
+  if templates_agree "$WORK/gt_a.txt" "$WORK/gt_b.txt"; then
+    ok "the two goal.md template extractors agree"
+  else
+    nope "the two goal.md template extractors agree" \
+         "$(diff -u "$WORK/gt_a.txt" "$WORK/gt_b.txt" | head -20)"
+  fi
+
+  if matches_goal_template_hash "$WORK/gt_a.txt"; then
+    ok "the goal.md template matches the stride-lite source hash"
+  else
+    # "Shows the diff" is a requirement, not decoration: a bare hash mismatch
+    # says something changed without saying what. Diff against upstream when it
+    # is on disk; otherwise show the section spine, which is what a structural
+    # edit moves.
+    UPSTREAM_GOAL_SKILL="$STRIDE_LITE_ROOT/skills/stride-lite-create-goal/SKILL.md"
+    if [ -r "$UPSTREAM_GOAL_SKILL" ]; then
+      extract_goal_a "$UPSTREAM_GOAL_SKILL" > "$WORK/gt_upstream.txt" 2>/dev/null
+      GOAL_DIFF="$(diff -u "$WORK/gt_upstream.txt" "$WORK/gt_a.txt" | head -20)"
+    else
+      GOAL_DIFF="$(grep -n '^#' "$WORK/gt_a.txt")"
+    fi
+    nope "the goal.md template matches the stride-lite source hash" \
+         "expected $EXPECTED_GOAL_TEMPLATE_SHA256, got $(shasum -a 256 "$WORK/gt_a.txt" | cut -d' ' -f1)
+$GOAL_DIFF"
+  fi
+
+  # Cross-check against stride-lite on disk. SKIPs, never passes, when absent —
+  # a consumer will never have stride-lite checked out.
+  UPSTREAM_GOAL_SKILL="$STRIDE_LITE_ROOT/skills/stride-lite-create-goal/SKILL.md"
+  if [ -r "$UPSTREAM_GOAL_SKILL" ]; then
+    extract_goal_a "$UPSTREAM_GOAL_SKILL" > "$WORK/gt_upstream.txt" 2>/dev/null
+    if [ -s "$WORK/gt_upstream.txt" ] && diff -q "$WORK/gt_a.txt" "$WORK/gt_upstream.txt" >/dev/null; then
+      ok "goal.md template matches stride-lite's copy on disk"
+    else
+      nope "goal.md template matches stride-lite's copy on disk" \
+           "$(diff -u "$WORK/gt_upstream.txt" "$WORK/gt_a.txt" | head -20)"
+    fi
+  else
+    skipped "goal.md template stride-lite cross-check" "STRIDE_LITE_ROOT not found"
+  fi
+
+  # Negative control on the pin, driven through the production predicate.
+  sed '1s/$/ /' "$WORK/gt_a.txt" > "$WORK/gt_perturbed.txt"
+  if matches_goal_template_hash "$WORK/gt_perturbed.txt"; then
+    nope "the goal.md template hash pin rejects altered content (negative control)" \
+         "matches_goal_template_hash accepted a perturbed template"
+  else
+    ok "the goal.md template hash pin rejects altered content (negative control)"
+  fi
+else
+  skipped "the goal.md template is structurally complete (33 lines, 7 sections)" "extraction not credited"
+  skipped "the two goal.md template extractors agree" "extraction not credited"
+  skipped "the goal.md template matches the stride-lite source hash" "extraction not credited"
+  skipped "the goal.md template hash pin rejects altered content (negative control)" "extraction not credited"
 fi
 
 # --- The init canonical template ----------------------------------------
@@ -540,6 +662,226 @@ if [ -s "$WORK/wf_allow.txt" ]; then
   fi
 fi
 
+
+# --- Fixtures: byte-identity with stride-lite ----------------------------
+#
+# THE FAIL-vs-SKIP RULE, which the stages below depend on and which is easy to
+# collapse by accident:
+#
+#   Every promise has an offline form that ALWAYS runs. The live cross-check
+#   against stride-lite is strictly redundant confirmation, and only redundant
+#   confirmation may skip. A skip that removes the ONLY evidence for a claim is
+#   a FAIL.
+#
+# So: a vendored file of ours going missing is a FAIL (we ship it; its absence
+# is our defect). stride-lite not being checked out is a SKIP (not our repo,
+# absent for every consumer). But stride-lite present with a fixture path
+# missing under it is a FAIL — that is upstream restructuring, a cross-port
+# decision we must be told about, not a degradation to shrug at.
+#
+# require_fixture() and the upstream stage are deliberately SEPARATE and must
+# stay separate. A single check_file() with a --strict flag is how these two
+# verdicts get merged by a well-meaning refactor.
+#
+# What these stages do NOT establish: that these skills, driven by a live model,
+# emit these bytes. The fixtures are hand-authored simulations of a real run —
+# expected-output/goal.md says so in its own body — so no offline check can
+# render them from the placeholder templates. See fixtures/README.md.
+
+EXPECTED_SAMPLE_SHA256=0a6cd5605c149a3b3021600b5745d5826bc18ef1dc729ee133f7c3994e3d933d
+EXPECTED_GOAL_FIXTURE_SHA256=00ae81dc1a6907d97c0ce37712fce58b096756100fc55fffd7a095cc83b4de55
+EXPECTED_TASK1_FIXTURE_SHA256=141afe6f06ca27f240631357fee077aa0a9160025297ad242dbb4bbbfc9b9a97
+EXPECTED_STRIDE_LITE_COMMIT=ffb670bbc29096916d0111ca64944e0c92f968ee
+
+FIXTURE_FILES="README.md expected-output/goal.md expected-output/task1.md sample-requirements.md"
+
+# An absent, unreadable, empty or symlinked fixture is a failure — never a skip.
+require_fixture() {
+  [ -e "$1" ] || return 1
+  [ -L "$1" ] && return 1
+  [ -r "$1" ] || return 1
+  [ -s "$1" ] || return 1
+  return 0
+}
+
+matches_fixture_hash() {
+  [ "$(shasum -a 256 "$1" | cut -d' ' -f1)" = "$2" ]
+}
+
+# The fixture's `## ` spine must equal the template's, in order.
+headings_conform() {  # $1 template extraction, $2 fixture
+  diff -q <(grep '^## ' "$1") <(grep '^## ' "$2") >/dev/null
+}
+
+FIXTURES_CREDITED=1
+missing_fixtures=""
+for rel in $FIXTURE_FILES; do
+  require_fixture "$FIXTURES_DIR/$rel" || missing_fixtures="$missing_fixtures $rel"
+done
+if [ -z "$missing_fixtures" ]; then
+  ok "fixtures: every vendored file is present and non-empty"
+else
+  FIXTURES_CREDITED=0
+  nope "fixtures: every vendored file is present and non-empty" "missing or unusable:$missing_fixtures"
+fi
+
+# An unchecked extra file under fixtures/ is a rot vector.
+actual_fixtures="$(cd "$FIXTURES_DIR" 2>/dev/null && find . -type f -not -name .gitkeep | sed 's|^\./||' | sort | tr '\n' ' ')"
+expected_fixtures="$(printf '%s\n' $FIXTURE_FILES | sort | tr '\n' ' ')"
+fixture_links="$(cd "$FIXTURES_DIR" 2>/dev/null && find . -type l | wc -l | tr -d ' ')"
+if [ "$actual_fixtures" = "$expected_fixtures" ] && [ "$fixture_links" -eq 0 ]; then
+  ok "fixtures: the vendored tree holds exactly the expected files and no symlinks"
+else
+  FIXTURES_CREDITED=0
+  nope "fixtures: the vendored tree holds exactly the expected files and no symlinks" \
+       "found [$actual_fixtures] wanted [$expected_fixtures], symlinks=$fixture_links"
+fi
+
+if [ "$FIXTURES_CREDITED" -eq 1 ]; then
+  hashdrift=""
+  for pair in "sample-requirements.md:$EXPECTED_SAMPLE_SHA256" \
+              "expected-output/goal.md:$EXPECTED_GOAL_FIXTURE_SHA256" \
+              "expected-output/task1.md:$EXPECTED_TASK1_FIXTURE_SHA256"; do
+    rel="${pair%%:*}"; want="${pair##*:}"
+    got="$(shasum -a 256 "$FIXTURES_DIR/$rel" | cut -d' ' -f1)"
+    matches_fixture_hash "$FIXTURES_DIR/$rel" "$want" || hashdrift="$hashdrift
+  $rel expected $want got $got"
+  done
+  if [ -z "$hashdrift" ]; then
+    ok "fixtures: every vendored file matches its pinned stride-lite sha256"
+  else
+    nope "fixtures: every vendored file matches its pinned stride-lite sha256" "$hashdrift"
+  fi
+
+  if grep -Fq "$EXPECTED_STRIDE_LITE_COMMIT" "$FIXTURES_DIR/README.md"; then
+    ok "fixtures: README.md records the stride-lite source commit"
+  else
+    nope "fixtures: README.md records the stride-lite source commit" \
+         "$EXPECTED_STRIDE_LITE_COMMIT not found in fixtures/README.md"
+  fi
+
+  # Two-source agreement: a vendor refresh must touch the README and this file
+  # together, or one silently describes a version the other does not check.
+  readme_gap=""
+  for want in "$EXPECTED_SAMPLE_SHA256" "$EXPECTED_GOAL_FIXTURE_SHA256" "$EXPECTED_TASK1_FIXTURE_SHA256"; do
+    grep -Fq "$want" "$FIXTURES_DIR/README.md" || readme_gap="$readme_gap $want"
+  done
+  for rel in sample-requirements.md expected-output/goal.md expected-output/task1.md; do
+    grep -Fq "$rel" "$FIXTURES_DIR/README.md" || readme_gap="$readme_gap $rel"
+  done
+  if [ -z "$readme_gap" ]; then
+    ok "fixtures: README.md pins the same hashes and paths the check does"
+  else
+    nope "fixtures: README.md pins the same hashes and paths the check does" "absent from README:$readme_gap"
+  fi
+
+  # Line endings: named explicitly so a CRLF checkout explains itself instead of
+  # failing the hash stage mystifyingly.
+  eol=""
+  for rel in $FIXTURE_FILES; do
+    LC_ALL=C grep -q "$(printf '\r')" "$FIXTURES_DIR/$rel" && eol="$eol $rel:CR"
+    [ "$(tail -c 1 "$FIXTURES_DIR/$rel" | xxd -p)" = "0a" ] || eol="$eol $rel:no-final-newline"
+  done
+  if [ -z "$eol" ]; then
+    ok "fixtures: no CR bytes, and every file ends with a newline"
+  else
+    nope "fixtures: no CR bytes, and every file ends with a newline" "$eol"
+  fi
+
+  # The pitfall against comparing per-run-varying values, enforced for the NEXT
+  # refresh rather than for today's known-clean corpus.
+  varying=""
+  for rel in expected-output/goal.md expected-output/task1.md sample-requirements.md; do
+    grep -qE '[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{2}:[0-9]{2}|/Users/|/home/|/tmp/' "$FIXTURES_DIR/$rel" \
+      && varying="$varying $rel"
+  done
+  if [ -z "$varying" ]; then
+    ok "fixtures: no timestamp or machine-specific path in any vendored file"
+  else
+    nope "fixtures: no timestamp or machine-specific path in any vendored file" "found in:$varying"
+  fi
+
+  # Conformance: the honest substitute for "render and diff". The spines are
+  # derived from the templates at check time — a hardcoded list would drift with
+  # the template and prove nothing.
+  if [ "$GOAL_TPL_CREDITED" -eq 1 ] && [ "$PARITY_CREDITED" -eq 1 ]; then
+    if headings_conform "$WORK/goal.txt" "$FIXTURES_DIR/expected-output/task1.md"; then
+      ok "fixtures: task1.md carries the taskN template's headings, in order"
+    else
+      nope "fixtures: task1.md carries the taskN template's headings, in order" \
+           "$(diff -u <(grep '^## ' "$WORK/goal.txt") <(grep '^## ' "$FIXTURES_DIR/expected-output/task1.md") | head -20)"
+    fi
+
+    if headings_conform "$WORK/gt_a.txt" "$FIXTURES_DIR/expected-output/goal.md"; then
+      ok "fixtures: goal.md carries the goal template's headings, in order"
+    else
+      nope "fixtures: goal.md carries the goal template's headings, in order" \
+           "$(diff -u <(grep '^## ' "$WORK/gt_a.txt") <(grep '^## ' "$FIXTURES_DIR/expected-output/goal.md") | head -20)"
+    fi
+
+    # Negative control, driven through the production predicate.
+    sed 's/^## Where$/## Where context/' "$WORK/goal.txt" > "$WORK/tpl_renamed.txt"
+    if headings_conform "$WORK/tpl_renamed.txt" "$FIXTURES_DIR/expected-output/task1.md"; then
+      nope "fixtures: the conformance check detects a renamed heading (negative control)" \
+           "headings_conform accepted a renamed heading"
+    else
+      ok "fixtures: the conformance check detects a renamed heading (negative control)"
+    fi
+  else
+    skipped "fixtures: task1.md carries the taskN template's headings, in order" "template extraction not credited"
+    skipped "fixtures: goal.md carries the goal template's headings, in order" "template extraction not credited"
+    skipped "fixtures: the conformance check detects a renamed heading (negative control)" "template extraction not credited"
+  fi
+
+  # Live cross-check. SKIPs when stride-lite is absent; FAILS when it is present
+  # but a path under it is missing — see the rule at the top of this section.
+  if [ -d "$STRIDE_LITE_ROOT/fixtures" ]; then
+    updrift=""
+    for rel in sample-requirements.md expected-output/goal.md expected-output/task1.md; do
+      if [ ! -r "$STRIDE_LITE_ROOT/fixtures/$rel" ]; then
+        updrift="$updrift
+  $rel absent upstream — upstream restructured"
+      elif ! diff -q "$FIXTURES_DIR/$rel" "$STRIDE_LITE_ROOT/fixtures/$rel" >/dev/null; then
+        updrift="$updrift
+$(diff -u "$STRIDE_LITE_ROOT/fixtures/$rel" "$FIXTURES_DIR/$rel" | head -20)"
+      fi
+    done
+    if [ -z "$updrift" ]; then
+      ok "fixtures: the vendored copies match stride-lite's files on disk"
+    else
+      nope "fixtures: the vendored copies match stride-lite's files on disk" "$updrift"
+    fi
+  else
+    skipped "fixtures stride-lite cross-check" "STRIDE_LITE_ROOT not found"
+  fi
+else
+  for lbl in "fixtures: every vendored file matches its pinned stride-lite sha256" \
+             "fixtures: README.md records the stride-lite source commit" \
+             "fixtures: README.md pins the same hashes and paths the check does" \
+             "fixtures: no CR bytes, and every file ends with a newline" \
+             "fixtures: no timestamp or machine-specific path in any vendored file" \
+             "fixtures: task1.md carries the taskN template's headings, in order" \
+             "fixtures: goal.md carries the goal template's headings, in order" \
+             "fixtures: the conformance check detects a renamed heading (negative control)" \
+             "fixtures: the vendored copies match stride-lite's files on disk"; do
+    skipped "$lbl" "a vendored fixture is missing or unusable — see the FAIL above"
+  done
+fi
+
+# In-script proof that the two fixture gates are not vacuous.
+sed '1s/$/ /' "$FIXTURES_DIR/expected-output/goal.md" > "$WORK/fixture_perturbed.md" 2>/dev/null
+if matches_fixture_hash "$WORK/fixture_perturbed.md" "$EXPECTED_GOAL_FIXTURE_SHA256"; then
+  nope "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)" \
+       "matches_fixture_hash accepted a perturbed fixture"
+elif require_fixture "$WORK/definitely-absent.md"; then
+  nope "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)" \
+       "require_fixture accepted a path that does not exist"
+elif require_fixture "/dev/null"; then
+  nope "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)" \
+       "require_fixture accepted an empty file"
+else
+  ok "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)"
+fi
 
 # --- Commands: cross-file consistency ------------------------------------
 # These are the assertions test/commands.test.ts structurally cannot make on

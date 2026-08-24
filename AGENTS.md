@@ -137,7 +137,7 @@ scans the entry point's source for the forbidden tokens and pins its import list
 | `skills/` | Skill definitions |
 | `agents/` | Agent definitions |
 | `commands/` | Command definitions |
-| `fixtures/` | Test fixtures |
+| `fixtures/` | The vendored stride-lite parity corpus — see the byte-identity rule |
 | `test/` | Scaffold and packaging tests (module tests are co-located in `src/`) |
 
 ## The `lib/` convention
@@ -283,13 +283,55 @@ Pinned by `test/skills.test.ts`.
 predates this and still carries only `name`/`description` — owed to the
 workflow-port task.)
 
-### The never-diverge template rule
+### The byte-identity promise (hard rule)
 
-The `taskN.md` template is reproduced verbatim in **both** create skills. It must
-stay byte-identical to the other copy **and** to stride-lite's. Invariants: **81
-lines, 1531 bytes, 14 `## ` headings, sha256
-`f5ff7db2802fbe5c9ac4d8ffafddc45ea09bdbca55541aed02f54552567cfedd`.** A change
-lands in both files in the same commit.
+The lite family promises that a goal directory created by one plugin can be
+driven by another, **because the on-disk artifacts are byte-identical**. This is
+a hard rule with three subjects, each enforced by named stages in
+`test/smoke.sh`:
+
+| Subject | Invariants | Enforced by |
+|---|---|---|
+| The `taskN.md` template block | 81 lines, 1531 bytes, 14 `## ` headings, sha256 `f5ff7db2802fbe5c9ac4d8ffafddc45ea09bdbca55541aed02f54552567cfedd` | the two-extractor parity stages + the hash pin |
+| The `goal.md` template block | 33 lines, 7 `## ` headings, sha256 `63b444f8cb7c84b0a2d8ec39ceafc8e7d74c8e80433f530e5adf7168b4273234` | the `goal.md template` stages |
+| The three vendored fixtures | the sha256s recorded in `fixtures/README.md`, taken from stride-lite `ffb670b` | the `fixtures:` stages |
+
+**Changing any pinned hash is a cross-port decision.** `stride-lite`,
+`stride-copilot-lite` and this port land the change together, in the same change
+set. If you are updating a hash to make a test pass, stop — that is the failure
+the pin exists to surface, not noise to silence. The `taskN.md` template is
+reproduced verbatim in **both** create skills, so a change to it lands in both
+files in the same commit.
+
+**Criterion-3 deviation, recorded because it is load-bearing.** W2042 asked for a
+check that renders the templates and diffs the result against the fixtures. That
+is not achievable offline. `fixtures/expected-output/goal.md` and `task1.md` are
+hand-authored simulations of a real create-goal run — `goal.md` says so in its
+own body — and reproducing them from the placeholder templates requires a model
+to author the substituted prose. A deterministic renderer written to close the
+gap would be a second copy of the fixtures' answers, and diffing a fixture
+against a generator seeded from that fixture asserts nothing. stride-lite does
+not attempt it either. What is enforced instead is the table above, plus a
+**conformance** stage: each fixture carries its template's `## ` headings in the
+same order, derived from the template at check time rather than hardcoded.
+
+**What this proves:** the artifacts and the templates are the same bytes across
+ports, and each shipped artifact is a valid rendering of the template beside it.
+**What it does not prove:** that these skills, driven by a live model, emit these
+exact bytes. Only a live OpenCode run can establish that; it is on Known gaps.
+
+**FAIL vs SKIP.** Every promise has an offline form that always runs; the live
+cross-check against stride-lite is strictly redundant confirmation, and only
+redundant confirmation may skip. A skip that removes the *only* evidence for a
+claim is a FAIL. So a vendored file of ours going missing FAILs; stride-lite not
+being checked out SKIPs; and stride-lite present with a fixture path missing
+under it FAILs, because that is upstream restructuring we must be told about.
+`require_fixture()` and the upstream stage are deliberately separate functions —
+a single `check_file --strict` is how those two verdicts get merged by accident.
+
+**Never re-brand a fixture.** `expected-output/goal.md` names
+`/stride-lite:create-goal` in its body; that is upstream's bytes and must stay.
+Any future repo-wide foreign-token scan must exclude `fixtures/`.
 
 `test/smoke.sh` enforces it, and is built to not be vacuous — the sibling port
 shipped a single-extractor version that compared one extraction against another
@@ -309,8 +351,9 @@ it **SKIPs** with a stated reason when absent, and is never credited as a pass.
 
 `test/smoke.sh` runs under `bun test` via `test/smoke.test.ts`. A `.sh` the test
 runner never invokes is free to rot, and a parity check nobody runs guards
-nothing. Test seams `STRIDE_SMOKE_SKILLS_DIR`, `STRIDE_SMOKE_COMMANDS_DIR` and
-`STRIDE_LITE_ROOT` exist for that wrapper and default to the real paths.
+nothing. Test seams `STRIDE_SMOKE_SKILLS_DIR`, `STRIDE_SMOKE_COMMANDS_DIR`,
+`STRIDE_SMOKE_FIXTURES_DIR` and `STRIDE_LITE_ROOT` exist for that wrapper and
+default to the real paths.
 
 It also carries the **command-file** stages, and they are there for a reason
 `test/commands.test.ts` cannot satisfy on its own terms: each reads TWO trees and

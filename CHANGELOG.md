@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Vendored stride-lite's fixture corpus (`fixtures/`) at commit `ffb670b`, with
+  `fixtures/README.md` recording the source commit and the per-file hashes, and
+  byte-identity stages in `test/smoke.sh` that pin all three files offline and
+  diff them against stride-lite when it is on disk.
+- Pinned the `goal.md` template block, which until now was extracted by nothing
+  and compared to nothing — it could have been rewritten with the suite green.
+- A conformance stage asserting each fixture carries its template's `## `
+  headings in the same order, derived from the template at check time.
 
 - Repository scaffold: `package.json`, `tsconfig.json`, `.gitignore`, `LICENSE`,
   a `README` stub and this changelog, plus the empty `skills/`, `agents/`,
