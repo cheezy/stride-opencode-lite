@@ -176,6 +176,36 @@ requirements directory and `docs/implementation/PENDING` for the output base.
 4. Write errors to stderr, prefixed `<helper_name>: <reason>`.
 5. Update the repository layout notes in this file.
 
+### Deliberate divergence from stride-lite
+
+`lib/load_requirements_dir.md` is **not** byte-identical to its stride-lite
+source, and that is intentional.
+
+The source spec claimed that `find -L` "follows symlinks for regular files, but
+symlinked directories are NOT followed beyond the first level — this caps the
+recursion depth and avoids cycles." That claim is false about the spec's own
+normative implementation: `find -L` descends into symlinked directories to
+arbitrary depth. Verified empirically. The consequence was that a runtime
+transliterating the bash inherited an unbounded filesystem read *while believing
+it was contained* — a symlink inside the requirements directory could pull any
+file the invoking user can read into a prompt.
+
+This port therefore:
+
+- states what `find -L` actually does, rather than what the source claimed;
+- adds a **containment check** that resolves each candidate — including a
+  symlinked final component, up to 32 hops — and skips anything landing outside
+  the resolved directory. Symlinked files pointing *inside* still work, which is
+  the behaviour the source meant to describe;
+- downgrades the `=== path ===` markers from "an unambiguous boundary" to what
+  they are: a readable separator that file content can forge, with the assembled
+  block called out as untrusted data.
+
+**stride-lite carries the same defect and should be fixed at the source, after
+which this file and the byte-identity check should be reconciled.** Until then,
+a diff of this file against stride-lite's shows these changes and they are
+expected. The other three helper specs remain faithful ports.
+
 ### What was deliberately not ported
 
 stride-lite's `lib/` also contains `select_workflow_branch.md`. It is **not**

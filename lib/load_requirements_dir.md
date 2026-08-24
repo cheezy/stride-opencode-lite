@@ -32,7 +32,7 @@ For each text file (in sorted-by-name order) the helper emits:
 Three rules:
 
 1. **Header marker:** the literal line `=== <relative-path> ===` where `<relative-path>` is the file's path relative to `dir` (NOT relative to CWD). One blank line follows the header.
-2. **File contents are emitted verbatim** — no trimming, no normalization, no line-ending conversion. The downstream consumer is a language model; the surrounding `===` markers give it an unambiguous boundary.
+2. **File contents are emitted verbatim** — no trimming, no normalization, no line-ending conversion. The surrounding `===` markers are a **readable separator, not a trust boundary**: they are a fixed, guessable literal that file content can itself contain, so a requirements file can forge one. The assembled block is untrusted data. Callers must fence it with a value the content cannot predict and instruct the model that everything inside is reference material, never instructions.
 3. **A blank line separates files.** If the file does not end in a newline, the helper emits one before the separator blank line so the trailing `===` of the next header lands on its own line.
 
 ## File selection rules
@@ -40,15 +40,17 @@ Three rules:
 - **Recursive descent** through `dir` (`find "$dir" -type f`).
 - **Sorted by relative path** so the output is deterministic across invocations.
 - **Hidden files (`.foo`, `.DS_Store`) are skipped.** Most users do not expect dotfiles to be slurped into the requirements context.
-- **Symlinks are followed** for regular files (`find -L`), but symlinked directories are NOT followed beyond the first level — this caps the recursion depth and avoids cycles.
+- **Symlinks are followed** for regular files (`find -L`), but every candidate is **containment-checked** before being read: its path is resolved and skipped unless it resolves to somewhere under the resolved `dir`. `find -L` on its own descends into symlinked directories to arbitrary depth, so the check — not `find` — is what keeps the read inside the named directory. A file that resolves outside is skipped with a one-line note to stderr.
 - **Binary files are skipped** with a one-line note to stderr. A file is treated as binary if the first 8KB contain a NUL byte. The check is done by comparing the byte count of the first 8KB before and after stripping NULs with `tr -d '\0'` — this is portable across BSD and GNU `grep`, which differ in how they handle NUL bytes in patterns. This handles `.png`, `.pdf`, `.zip`, compiled artifacts.
 - **Files larger than 1 MiB are skipped** with a one-line note to stderr. Defensive against accidentally checking in a database dump.
 
 ## Pitfalls
 
 - **Do not crash when `--requirements-dir` is missing.** Return the empty string and log `"load_requirements_dir: directory not found: <dir>"` to stderr. Surface skills must continue to function on fresh projects.
+- **Do not rely on `find` alone for containment.** `find -L` follows symlinks into directories to arbitrary depth; without the resolved-path check, a symlink inside the requirements directory reads any file the invoking user can read and concatenates it into a prompt.
 - **Do not read binary files into the context.** Detect the NUL byte and skip; logging the skip is informative to the user.
-- **Do not normalize line endings or strip BOMs.** The downstream consumer is a language model — verbatim content with explicit boundaries is the contract.
+- **Do not normalize line endings or strip BOMs.** The downstream consumer is a language model — verbatim content is the contract.
+- **Do not treat the `===` markers as a security boundary.** They delimit for readability; requirements content is untrusted input to whatever consumes it.
 - **Do not write headers when the file is skipped.** A skipped binary or oversized file produces no output, only a stderr log line.
 - **Do not depend on `find -printf`** — it is GNU-only and absent on BSD/macOS. Use POSIX `find ... -type f` and pipe through `sort`.
 
@@ -67,13 +69,40 @@ load_requirements_dir() {
   fi
 
   local stripped="${dir%/}"
-  local file rel
+  local base
+  base="$(cd "$stripped" 2>/dev/null && pwd -P)" || return 0
+  local file rel resolved
 
   # Sorted, recursive, regular files only, hidden files excluded.
   find -L "$stripped" -type f -not -path '*/.*' 2>/dev/null \
     | sort \
     | while IFS= read -r file; do
         rel="${file#${stripped}/}"
+
+        # Containment: a symlink must not widen the read scope beyond `dir`.
+        # `find -L` descends into symlinked directories to arbitrary depth, so
+        # this check -- not find -- is what bounds the walk. The final path
+        # component is resolved too: `pwd -P` resolves the directories a file
+        # sits in, but not a symlinked file itself.
+        resolved="$file"
+        local hops=0
+        while [ -L "$resolved" ] && [ "$hops" -lt 32 ]; do
+          local target
+          target="$(readlink "$resolved")"
+          case "$target" in
+            /*) resolved="$target" ;;
+            *)  resolved="$(dirname "$resolved")/$target" ;;
+          esac
+          hops=$(( hops + 1 ))
+        done
+        resolved="$(cd "$(dirname "$resolved")" 2>/dev/null && pwd -P)/$(basename "$resolved")"
+        case "$resolved" in
+          "$base"/*) ;;
+          *)
+            echo "load_requirements_dir: skipping (outside dir): $rel" >&2
+            continue
+            ;;
+        esac
 
         # Size cap: skip files > 1 MiB.
         local size
@@ -163,7 +192,9 @@ stderr: `load_requirements_dir: skipping (binary): diagram.png`
 
 - **Missing directory** — empty stdout, log to stderr, exit 0. The non-fatal contract is deliberate; surface skills must work on fresh projects.
 - **Empty directory** — empty stdout, no log, exit 0.
-- **Symlink as the directory itself** — followed once (`find -L` follows the top-level symlink). Symlinks _inside_ the directory are followed for regular files only; symlinked subdirectories are not recursed into (cycle defense).
+- **Symlink as the directory itself** — followed (`find -L` follows the top-level symlink), and `dir` is resolved first so everything beneath it is measured against the resolved root.
+- **Symlink pointing outside `dir`** — skipped, whether it is a file or a directory, with `"load_requirements_dir: skipping (outside dir): <rel>"` on stderr. This is the containment control: the directory names a read scope, and a symlink must not widen it.
+- **Symlink chains** — followed up to 32 hops while resolving, then measured against the resolved root. The hop cap bounds a symlink loop; an unresolved chain simply fails the containment check and is skipped.
 - **File without trailing newline** — the helper emits a synthetic newline before the blank separator so the next header is line-aligned.
 - **Permission denied on a file** — `cat` writes an error to stderr; the helper continues with the next file. Acceptable: the user is informed via stderr without aborting the whole context build.
 - **Concurrent modification of `dir` during the walk** — best-effort. Files added during the walk may or may not be picked up; files removed mid-walk may produce a transient `cat` error. Surface skills do not require atomicity for this read.
