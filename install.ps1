@@ -123,25 +123,28 @@ foreach ($dir in @('skills', 'agents', 'commands', 'lib')) {
   $null = New-Item -ItemType Directory -Force -Path (Join-Path $DestRoot $dir)
 }
 
-Get-ChildItem -Path (Join-Path $Src 'skills') -Directory | ForEach-Object {
-  $target = Join-Path (Join-Path $DestRoot 'skills') $_.Name
-  if ($Force -and (Test-Path -LiteralPath $target)) {
-    Remove-Item -LiteralPath $target -Recurse -Force
+# -Force purges each skill directory first, so a file dropped from a skill in a
+# later release does not survive as a stale sibling.
+if ($Force) {
+  Get-ChildItem -Path (Join-Path $Src 'skills') -Directory | ForEach-Object {
+    $target = Join-Path (Join-Path $DestRoot 'skills') $_.Name
+    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
   }
-  $null = New-Item -ItemType Directory -Force -Path $target
-  # Copy-Item only. NEVER Get-Content | Set-Content: that round-trip re-encodes
-  # and would add a BOM under Windows PowerShell 5.1, breaking the byte-identity
-  # promise this repository pins with sha256.
-  Copy-Item -Path (Join-Path $_.FullName '*') -Destination $target -Recurse -Force
 }
 
-foreach ($dir in @('agents', 'commands', 'lib')) {
-  $srcDir = Join-Path $Src $dir
-  if (Test-Path $srcDir) {
-    Get-ChildItem -Path $srcDir -File -Filter '*.md' | ForEach-Object {
-      Copy-Item -LiteralPath $_.FullName -Destination (Join-Path (Join-Path $DestRoot $dir) $_.Name) -Force
-    }
-  }
+# THE COPY IS DRIVEN BY THE MANIFEST, path by path — the same single predicate
+# the preflight and the verification use. A directory-wide Copy-Item was a third,
+# broader predicate: a non-.md file in a skill would install while sitting
+# outside both the clobber guard and the byte verification.
+#
+# Copy-Item only. NEVER Get-Content | Set-Content: that round-trip re-encodes and
+# would add a BOM under Windows PowerShell 5.1, breaking the byte-identity
+# promise this repository pins with sha256.
+foreach ($rel in $manifest) {
+  $native   = $rel -replace '/', [IO.Path]::DirectorySeparatorChar
+  $destFile = Join-Path $DestRoot $native
+  $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destFile)
+  Copy-Item -LiteralPath (Join-Path $Src $native) -Destination $destFile -Force
 }
 
 # --- Verification, re-enumerated independently of the copy ---------------

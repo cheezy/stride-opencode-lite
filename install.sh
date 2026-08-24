@@ -88,11 +88,10 @@ fi
 manifest() {
   (
     cd "$SRC" || exit 1
-    # ONE predicate, matching the git cross-check below exactly. They used to
-    # differ — skills/**/* against a '\.md$' grep — which left a non-.md file in
-    # a skill invisible to the record, and a tracked depth-1 skills/*.md
-    # reported as a false failure. Neither could happen today; both were
-    # structurally possible, which is enough.
+    # ONE predicate — used by the collision preflight, the copy, the byte
+    # verification AND the git cross-check below. They used to differ, which
+    # left a non-.md file in a skill copied but unverified and outside the
+    # clobber guard. Anything not matched here is not installed at all.
     find skills -mindepth 1 -type f -name '*.md' -print
     find agents commands lib -maxdepth 1 -type f -name '*.md' -print
   )
@@ -133,25 +132,32 @@ fi
 # --- Copy ----------------------------------------------------------------
 mkdir -p "$DEST_ROOT/skills" "$DEST_ROOT/agents" "$DEST_ROOT/commands" "$DEST_ROOT/lib"
 
-while IFS= read -r name; do
-  [ -n "$name" ] || continue
-  if [ "$FORCE" -eq 1 ] && [ -d "$DEST_ROOT/skills/$name" ]; then
-    rm -rf "${DEST_ROOT:?}/skills/${name:?}"
-  fi
-  mkdir -p "$DEST_ROOT/skills/$name"
-  # cp -R of the contents, preserving bytes. Never a read/rewrite round trip:
-  # byte identity with stride-lite is the product here.
-  cp -R "$SRC/skills/$name/." "$DEST_ROOT/skills/$name/"
-done <<EOF
+# --force purges each skill directory first, so a file dropped from a skill in
+# a later release does not survive as a stale sibling.
+if [ "$FORCE" -eq 1 ]; then
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    [ -d "$DEST_ROOT/skills/$name" ] && rm -rf "${DEST_ROOT:?}/skills/${name:?}"
+  done <<EOF
 $(skill_dirs)
 EOF
+fi
 
-for dir in agents commands lib; do
-  for f in "$SRC/$dir"/*.md; do
-    [ -e "$f" ] || continue
-    cp -p "$f" "$DEST_ROOT/$dir/$(basename "$f")"
-  done
-done
+# THE COPY IS DRIVEN BY THE MANIFEST, path by path. It used to be `cp -R` of
+# each skill directory, which made the copy a THIRD predicate broader than the
+# other two: a non-.md file in a skill would be installed while sitting outside
+# the collision preflight and outside the byte verification — installed
+# unverified, and overwritten without --force being required. One predicate now
+# governs the preflight, the copy and the verification alike.
+while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
+  mkdir -p "$DEST_ROOT/$(dirname "$rel")"
+  # cp -p preserves bytes and mode. Never a read/rewrite round trip: byte
+  # identity with stride-lite is the product here.
+  cp -p "$SRC/$rel" "$DEST_ROOT/$rel"
+done <<EOF
+$(manifest)
+EOF
 
 # --- Verification --------------------------------------------------------
 # Re-enumerated INDEPENDENTLY of the copy above. A verification that re-reads

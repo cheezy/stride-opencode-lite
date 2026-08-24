@@ -347,20 +347,31 @@ describe("README", () => {
 
     expect(readme).toContain("has **not** been run on Windows");
     expect(readme).toContain("unverified");
-    // Deny-listing phrasings is not enough — a plural-only regex walks past the
-    // singular, and no list anticipates every way to overclaim. Instead: NO
-    // sentence mentioning Windows may make a positive verification claim. That
-    // catches a new false claim, not only the ones foreseen.
+    // EVERY sentence mentioning Windows must carry a negation, except ones
+    // allow-listed here by exact text. A verb deny-list was still a list you
+    // have to keep complete — "runs green", "production-ready" and any other
+    // phrasing nobody thought of walked straight past it. Inverting it turns
+    // the question from "which verbs count as a claim" into "which sentences
+    // did someone consciously vouch for".
+    const ALLOWED_WITHOUT_NEGATION = [
+      "On Windows, or anywhere with PowerShell:",
+      // States what WAS verified, under pwsh on macOS. Its negation lives in
+      // the sentence after it, which this list deliberately does not merge —
+      // each entry is a sentence someone consciously vouched for.
+      "**Windows verification status.**",
+    ];
+
+    // The subject is the PowerShell installer's verification status, not the
+    // literal word "Windows": "we ship it as a fully tested cross-platform
+    // installer" makes the same false claim without naming the platform.
     const windowsSentences = readme
       .split(/(?<=\.)\s+/)
-      .filter((sentence) => /\bwindows\b/i.test(sentence));
+      .filter((sentence) => /\b(windows|install\.ps1|powershell|cross-platform)\b/i.test(sentence))
+      .filter((sentence) => !ALLOWED_WITHOUT_NEGATION.some((ok) => sentence.includes(ok)));
 
     expect(windowsSentences.length).toBeGreaterThan(0);
     for (const sentence of windowsSentences) {
-      const positiveClaim = /\b(verified|tested|works|working|supported|supports?)\b/i.test(sentence);
-      const negated = /\b(not|never|no|unverified|untested)\b/i.test(sentence);
-
-      if (positiveClaim) expect(sentence).toSatisfy(() => negated);
+      expect(sentence).toMatch(/\b(not|never|no|unverified|untested)\b/i);
     }
   });
 
@@ -376,12 +387,16 @@ describe("README", () => {
     // survives inside "emits no fewer events than a tool call", which asserts
     // the opposite. This is the mistake this very test was written to avoid.
     expect(readme).toContain("`@mention` dispatch emits no `tool.execute.*` event");
-    // And no sentence may claim the blocking triggers fire.
-    for (const sentence of readme.split(/(?<=\.)\s+/)) {
-      if (/\b(before_task|after_task|blocking (hook )?triggers?)\b/.test(sentence)) {
-        expect(sentence).not.toMatch(/\bfires? (on|when|every)\b/i);
-      }
-    }
+    // And no sentence may pair those subjects with an active verb saying they
+    // run. A three-preposition list was narrower than the shape it replaced:
+    // "fires for each agent dispatch" and "execute normally" both slipped past.
+    // The negative lookahead is load-bearing: without it this fires on the
+    // honest "`before_task` and `after_task` do not fire", since "fire" is in
+    // it. What must not appear is the subject reaching an active verb with no
+    // negation in between.
+    expect(readme).not.toMatch(
+      /(before_task|after_task|blocking (hook )?triggers?)((?!\b(not|never|no|dormant|cannot)\b)[^.]){0,80}?\b(fires?|firing|executes?|runs?|active|enabled)\b/i,
+    );
   });
 
   it("states the security model without overstating it", async () => {

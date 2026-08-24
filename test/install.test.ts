@@ -304,7 +304,13 @@ describe("install.sh", () => {
 
     expect(exitCode).toBe(0);
     expect(existsSync(join(cwd, ".opencode/skills/stride-opencode-lite-brand-new/SKILL.md"))).toBe(true);
-    expect(stdout).toContain("Skills:   5");
+    // Derived, not hardcoded: the assertion that matters is "the untracked
+    // skill was counted", not "the number is 5". A literal would break the day
+    // a fifth real skill lands, for reasons unrelated to this test.
+    const skillCount = (await readdir(join(src, "skills"), { withFileTypes: true })).filter((e) =>
+      e.isDirectory(),
+    ).length;
+    expect(stdout).toMatch(new RegExp(`Skills:\\s+${skillCount}`));
   });
 
   it("is idempotent under --force", async () => {
