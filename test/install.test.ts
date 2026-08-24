@@ -253,6 +253,56 @@ describe("install.sh", () => {
     expect(bad.stderr).toContain("unknown argument");
   });
 
+  it("handles a target path containing spaces", async () => {
+    // Named as an edge case by the task. Quoting bugs in a shell installer are
+    // the classic way this breaks, and they break silently-ish.
+    const src = await stagedSource();
+    const parent = await tmp("spaces");
+    const cwd = join(parent, "my project dir");
+    await mkdir(cwd, { recursive: true });
+
+    const { stdout, exitCode } = await run(src, { cwd });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toMatch(/Verified \d+ of \d+ files/);
+    expect((await installedPaths(join(cwd, ".opencode"))).length).toBeGreaterThan(0);
+  });
+
+  it("leaves another plugin's skills and agents alone", async () => {
+    // Named as an edge case by the task. .opencode/ is shared ground: a user
+    // with any other plugin installed already has these directories.
+    const src = await stagedSource();
+    const cwd = await tmp("shared");
+    await mkdir(join(cwd, ".opencode/skills/some-other-plugin"), { recursive: true });
+    await mkdir(join(cwd, ".opencode/agents"), { recursive: true });
+    await writeFile(join(cwd, ".opencode/skills/some-other-plugin/SKILL.md"), "other\n");
+    await writeFile(join(cwd, ".opencode/agents/unrelated.md"), "other\n");
+
+    const { exitCode } = await run(src, { cwd });
+
+    expect(exitCode).toBe(0);
+    // Untouched, and — because the refusal is per path — not even a collision.
+    expect(await readFile(join(cwd, ".opencode/skills/some-other-plugin/SKILL.md"), "utf8")).toBe("other\n");
+    expect(await readFile(join(cwd, ".opencode/agents/unrelated.md"), "utf8")).toBe("other\n");
+  });
+
+  it("installs an untracked new skill rather than rejecting it", async () => {
+    // The git cross-check asks "is anything TRACKED but absent from the tree?",
+    // never "is everything in the tree tracked". A contributor adding a skill
+    // that is not committed yet must not be blocked from installing it.
+    const src = await tmp("gitsrc-untracked");
+    expect(Bun.spawnSync(["git", "clone", "--quiet", repoRoot, src]).exitCode).toBe(0);
+    await cp(join(repoRoot, "install.sh"), join(src, "install.sh"));
+    await mkdir(join(src, "skills/stride-opencode-lite-brand-new"), { recursive: true });
+    await writeFile(join(src, "skills/stride-opencode-lite-brand-new/SKILL.md"), "# new\n");
+
+    const { stdout, exitCode, cwd } = await run(src);
+
+    expect(exitCode).toBe(0);
+    expect(existsSync(join(cwd, ".opencode/skills/stride-opencode-lite-brand-new/SKILL.md"))).toBe(true);
+    expect(stdout).toContain("Skills:   5");
+  });
+
   it("is idempotent under --force", async () => {
     const src = await stagedSource();
     const first = await run(src);
