@@ -338,7 +338,34 @@ that wrapper and default to the real paths.
   the intended prompts, or that create-goal and create-task do not collide.
 - `commands/` is still empty, so no slash-command spelling is claimed anywhere.
 - `select_workflow_branch.md`, `task-enricher` and `hook-diagnostician` remain
-  unported; no ported skill calls them.
+  unported, and **no ported skill dispatches them**. The workflow skill references
+  them only as unported: Step 1a performs the sparse check itself and routes a
+  sparse task to the `full` matrix row rather than enriching it, and Steps 2, 5
+  and 8 surface the plugin's structured failure JSON instead of triaging it. The
+  Step 3 decision matrix is normative on its own — stride-lite's own text says not
+  to shell out to `select_workflow_branch.md` — so nothing dangles. All three are
+  owed to a follow-up.
+- **The two blocking hook triggers are dormant on today's build.** `src/index.ts`
+  fires `before_task` / `after_task` on the activation of *skills* named
+  `stride-opencode-lite-task-explorer` / `-task-reviewer`. This port ships the
+  explorer and reviewer as **agents**, dispatched by `@mention` — and a mention
+  emits no `tool.execute.*` event, so those two sections never fire and the Step 3
+  and Step 6 dispatches run unhooked. `after_goal` is unaffected. Two thin
+  activation skills, or a marker-gated trigger in `src/index.ts`, would close it;
+  the workflow-port task deliberately shipped neither rather than widen into the
+  wiring's contract. The workflow skill states the dormancy in its own hook
+  contract, and never records those hooks as having run.
+- **The workflow skill writes no activation marker.** stride-lite writes one
+  because its hook script reads it; this plugin's hook layer reads none, so a
+  marker here would be state nothing consults and every claim attached to it
+  would be false. A marker gate belongs in `src/index.ts` if it is wanted.
+- **Two Bash-scope hardenings in the workflow skill**, both making it agree with a
+  control this repo already ships: its entries are stated as exact invocations
+  rather than prefixes (so `git -c`, `-C`, `--exec-path` and `--config-env` are
+  covered by no entry), and its diff capture carries `--no-ext-diff
+  --no-textconv`, matching the ported reviewer agent's own permission map. That
+  list is prose guidance, not a gate — a skill's frontmatter has no permission
+  block, so a real bash guard belongs in `src/index.ts`.
 - `## email` in the scaffolded config is inert data `src/parser.ts` correctly
   never reads.
 

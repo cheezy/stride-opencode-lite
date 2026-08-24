@@ -75,6 +75,18 @@ describe("test/smoke.sh", () => {
       "an empty extraction is refused, not credited",
       "init canonical template has its four sections",
       "init's clobber guard tests -L as well as -e",
+      "workflow: the step headings appear in order",
+      "workflow: the activation contract requires both intent and a path",
+      "workflow: the termination contract states a single exit",
+      "workflow: the review cap is 3 in Step 7",
+      "workflow: the hook contract table carries the three canonical rows",
+      "workflow: the contract supplies no hook context variables",
+      "workflow: no OpenCode-foreign host artifacts",
+      "workflow: the allow list keeps the terminal-move carve-out",
+      "workflow: the deny list keeps the runner, network and mutating-git entries",
+      "workflow: the allow and deny regions do not overlap (negative control)",
+      "workflow: the walkthrough never hand-executes a hook section",
+      "workflow: the archive move keeps git-mv preference, collision suffixing and the PENDING guard",
     ]) {
       expect(stdout).toContain(`PASS  ${label}`);
     }
