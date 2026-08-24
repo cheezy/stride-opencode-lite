@@ -31,6 +31,7 @@
 #   STRIDE_SMOKE_SKILLS_DIR    point the parity stage at a copied skills tree
 #   STRIDE_SMOKE_COMMANDS_DIR  point the command stage at a copied commands tree
 #   STRIDE_SMOKE_FIXTURES_DIR  point the fixture stages at a copied fixtures tree
+#   STRIDE_SMOKE_README        point the readme stages at a copied README
 #   STRIDE_LITE_ROOT         where to find stride-lite for the cross-check
 set -uo pipefail
 
@@ -673,6 +674,79 @@ if [ -s "$WORK/wf_allow.txt" ]; then
   fi
 fi
 
+
+# --- README: documented counts vs disk AND vs what the installer delivers -
+# test/commands.test.ts already pins README <-> repository. This stage is here
+# because it can do the thing a static test structurally cannot: run install.sh
+# and count what actually LANDED. The documented surface being right while the
+# INSTALLED surface is short a file is precisely the partial-install failure the
+# installers exist to catch.
+#
+# The failure-path installer controls (refusal, --force, verification failing)
+# live in test/install.test.ts rather than being duplicated here — that omission
+# is deliberate, not an oversight.
+README_FILE="${STRIDE_SMOKE_README:-$REPO_ROOT/README.md}"
+WORDS="zero one two three four five six seven eight nine"
+
+word_for() {  # $1 = a number
+  printf '%s' "$WORDS" | awk -v n="$1" '{print $(n + 1)}'
+}
+
+# Every count derived with find, never hard-coded: a literal number here would
+# be the second stale copy the whole stage exists to prevent.
+readme_counts_agree() {  # $1 = README to check, $2 = root to count
+  local readme="$1" root="$2" bad=""
+  local n_lib n_agents n_skills n_commands
+
+  n_lib=$(find "$root/lib" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
+  n_agents=$(find "$root/agents" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
+  n_skills=$(find "$root/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+  n_commands=$(find "$root/commands" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
+
+  grep -Fq "$(word_for "$n_lib") helper specs" "$readme"   || bad="$bad lib($n_lib)"
+  grep -Fq "$(word_for "$n_agents") agents" "$readme"      || bad="$bad agents($n_agents)"
+  grep -Fq "$(word_for "$n_skills") skills" "$readme"      || bad="$bad skills($n_skills)"
+  grep -Fq "$(word_for "$n_commands") commands" "$readme"  || bad="$bad commands($n_commands)"
+
+  README_COUNT_DETAIL="$bad"
+  [ -z "$bad" ]
+}
+
+if readme_counts_agree "$README_FILE" "$REPO_ROOT"; then
+  ok "readme: the documented counts match the repository"
+else
+  nope "readme: the documented counts match the repository" \
+       "README does not state the spelled-out count for:$README_COUNT_DETAIL"
+fi
+
+# Negative control, driven through the production predicate.
+cp "$README_FILE" "$WORK/readme_mutated.md"
+sed -i.bak 's/three agents/two agents/' "$WORK/readme_mutated.md" && rm -f "$WORK"/*.bak
+if readme_counts_agree "$WORK/readme_mutated.md" "$REPO_ROOT"; then
+  nope "readme: the count check detects a wrong number (negative control)" \
+       "readme_counts_agree accepted a README claiming the wrong agent count"
+else
+  ok "readme: the count check detects a wrong number (negative control)"
+fi
+
+# And against what install.sh actually delivered. HOME and cwd are redirected
+# into $WORK so this can never touch the real ~/.config/opencode.
+if [ -x "$REPO_ROOT/install.sh" ]; then
+  mkdir -p "$WORK/proj" "$WORK/fakehome"
+  if ( cd "$WORK/proj" && HOME="$WORK/fakehome" bash "$REPO_ROOT/install.sh" ) >"$WORK/install.log" 2>&1; then
+    if readme_counts_agree "$README_FILE" "$WORK/proj/.opencode"; then
+      ok "readme: the documented counts match what install.sh delivers"
+    else
+      nope "readme: the documented counts match what install.sh delivers" \
+           "installed surface disagrees with the README for:$README_COUNT_DETAIL"
+    fi
+  else
+    nope "readme: the documented counts match what install.sh delivers" \
+         "install.sh failed: $(tail -5 "$WORK/install.log")"
+  fi
+else
+  nope "readme: the documented counts match what install.sh delivers" "install.sh is not executable"
+fi
 
 # --- Fixtures: byte-identity with stride-lite ----------------------------
 #

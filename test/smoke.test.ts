@@ -104,6 +104,9 @@ describe("test/smoke.sh", () => {
       "the two goal.md template extractors agree",
       "the goal.md template matches the stride-lite source hash",
       "the goal.md template hash pin rejects altered content (negative control)",
+      "readme: the documented counts match the repository",
+      "readme: the count check detects a wrong number (negative control)",
+      "readme: the documented counts match what install.sh delivers",
       "fixtures: every vendored file is present and non-empty",
       "fixtures: the vendored tree holds exactly the expected files and no symlinks",
       "fixtures: every vendored file matches its pinned stride-lite sha256",
@@ -436,6 +439,22 @@ describe("test/smoke.sh", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("SKIP  fixtures: the recorded stride-lite commit resolves in that repository");
+  });
+
+  it("fails when the README states a count that disagrees with disk", async () => {
+    // The stage that stops the documented surface going stale. Driven through a
+    // copied README so the working tree is untouched.
+    const dir = await mkdtemp(join(tmpdir(), "stride-readme-"));
+    scratchDirs.push(dir);
+    const readme = join(dir, "README.md");
+    const source = await Bun.file(join(repoRoot, "README.md")).text();
+    await Bun.write(readme, source.replace("four skills", "five skills"));
+
+    const { stderr, exitCode } = await run({ STRIDE_SMOKE_README: readme });
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("FAIL  readme: the documented counts match the repository");
+    expect(stderr).toContain("skills(4)");
   });
 
   it("SKIPS the stride-lite cross-check when stride-lite is absent, never passes it", async () => {

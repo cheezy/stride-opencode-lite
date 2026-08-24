@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `install.sh` and `install.ps1`: step two of the two-step install, with a
+  per-path clobber refusal that copies nothing when it refuses, and a post-copy
+  verification that compares bytes and exits non-zero naming every missing or
+  corrupt file.
+- A README documenting the two-step install and the silent partial install that
+  follows from skipping either half, the discovery paths, the security model,
+  and a does-NOT block — with tests asserting the claims rather than the words.
+- `AGENTS.md`: the Claude Code to OpenCode tool-name mapping, the installer
+  contract and its deliberate divergences, and the hard rules.
+- A smoke stage asserting the documented counts against both the repository and
+  what `install.sh` actually delivers.
 - Vendored stride-lite's fixture corpus (`fixtures/`) at commit `ffb670b`, with
   `fixtures/README.md` recording the source commit and the per-file hashes, and
   byte-identity stages in `test/smoke.sh` that pin all three files offline and

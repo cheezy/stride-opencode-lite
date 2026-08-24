@@ -123,10 +123,100 @@ equality alone. A near-miss test pins that foreign namespaces route to nothing.
 
 ## What this plugin does not do
 
-It performs no API detection, keeps no environment cache, uploads no changed
-files, and reads no credential or auth file. It reads exactly one file — the
-project's `.stride_lite.md` — and runs the commands the user wrote in it. A test
-scans the entry point's source for the forbidden tokens and pins its import list.
+These are hard rules, not defaults.
+
+- **No Stride API calls.** Nothing here talks to a server, and no code path may
+  add one. A test scans the entry point's source for the forbidden tokens and
+  pins its import list.
+- **Reads no credential or auth file.** No `.stride_auth.md`, no token, ever.
+- **Keeps no environment cache and uploads no changed files.** Two things the
+  full Stride plugin does that this port deliberately does not.
+- **Reads exactly one file** — the project's `.stride_lite.md` — and runs the
+  commands the user wrote in it, verbatim.
+- **Byte identity is a hard rule**, with its own section below: the two template
+  blocks and the three vendored artifacts stay byte-identical to stride-lite's,
+  and changing a pinned hash is a cross-port decision. See
+  [The byte-identity promise](#the-byte-identity-promise-hard-rule).
+
+## Tool name mapping
+
+Skill and agent prose in this port was translated from stride-lite, which is
+written against **Claude Code** tool names. A port must translate them rather
+than carry them over — a skill body telling the model to use `Read` names a tool
+that does not exist here.
+
+| Skill reference | OpenCode tool |
+|---|---|
+| `Read` | `read` |
+| `Grep` | `grep` |
+| `Glob` | `glob` |
+| `Bash` | `bash` |
+| `Edit` | `edit` |
+| `Write` | `write` |
+| `Agent` | `@agent-name` (subagent mention) |
+
+**The last row is not a rename, and it is load-bearing.** `Agent` is a tool
+call; `@agent-name` is a mention, and a mention emits **no** `tool.execute.*`
+event at all. That is precisely why the two blocking hook triggers are dormant
+on this build: they key on a skill-activation tool call that an `@mention` never
+produces. Anything that assumes an agent dispatch is observable to the hook
+layer is wrong here.
+
+## Installation and the installers
+
+Installation is two steps, and each without the other fails silently:
+registering the plugin in `opencode.json` starts the hook layer but creates no
+skills; copying the artifacts makes them discoverable but fires no hook.
+`install.sh` and `install.ps1` are step two.
+
+Targets are `./.opencode/` (default) or `~/.config/opencode/` (`--global` /
+`-Global`), holding `skills/`, `agents/`, `commands/` and `lib/`.
+
+**Deliberate divergences from `stride-opencode-ideation/install.sh`**, which was
+the structural model:
+
+| Divergence | Why |
+|---|---|
+| `fixtures/` is not installed | A test corpus pinned to stride-lite with no runtime role. Ideation copies its own. |
+| `AGENTS.md` is not installed | Ideation merges a managed block into the user's root `AGENTS.md`. This file is 600 lines of contributor notes, not consumer orientation. |
+| No `git clone` fallback | Ideation's fallback triggers when the surface looks incomplete, which would silently repair a mutilated checkout by replacing it — and make the verification below unfalsifiable. |
+| Unknown arguments are an error | Ideation ignores them, so a mistyped `--forse` installs anyway and reports success. |
+| A real clobber refusal | Ideation has none for the bundle directories. |
+| Verification that can fail | Ideation's is a count-and-print that cannot exit non-zero, which is not verification. |
+
+Three properties of the refusal and the verification are load-bearing, and a
+weaker version of each would satisfy the words while protecting nothing:
+
+1. **The refusal is per path, not per directory.** `$DEST/skills` exists for
+   anyone with any other skill installed, so a directory-level guard would make
+   `--force` mandatory in practice.
+2. **The refusal precedes every write.** A refusal that aborts mid-copy creates
+   the partial install it exists to prevent.
+3. **The verification re-enumerates independently of the copy**, and compares
+   bytes. One that re-reads the copy's own list passes exactly when that list is
+   wrong — the bug class it exists to catch. Same reasoning as `test/smoke.sh`'s
+   two independently-coded extractors.
+
+**The source-completeness limit, and why git is the answer.** Everything above
+enumerates from the source tree, so it structurally cannot see a file missing
+from the *source*: an absent file is never enumerated and "14 of 14 verified" is
+true and useless. `git ls-files` is the independent record — a deleted file is
+still tracked — so the installers cross-check against it and say plainly when
+the source is not a checkout rather than implying a completeness they did not
+verify.
+
+**Windows verification status.** `install.ps1` is executed by the suite under
+PowerShell 7 (`pwsh`) on macOS: its refusal, its `-Force` overwrite, its
+verification and that verification's failure path, plus a parity test requiring
+both installers to produce the identical installed path set. It has **not** run
+on Windows, nor under Windows PowerShell 5.1, so `$env:USERPROFILE` resolution,
+backslash paths, the 260-character path limit and execution policy are
+unverified. Do not write "Windows support" anywhere without that qualification.
+
+**Never use `Get-Content | Set-Content` in the PowerShell installer.** That
+round-trip re-encodes and adds a BOM under 5.1, which would break the
+byte-identity promise the fixtures pin. `Copy-Item` only, verified with
+`Get-FileHash`.
 
 ## Repository layout
 
@@ -138,7 +228,8 @@ scans the entry point's source for the forbidden tokens and pins its import list
 | `agents/` | Agent definitions |
 | `commands/` | Command definitions |
 | `fixtures/` | The vendored stride-lite parity corpus — see the byte-identity rule |
-| `test/` | Scaffold and packaging tests (module tests are co-located in `src/`) |
+| `test/` | Scaffold, packaging, smoke and installer tests (module tests are co-located in `src/`) |
+| `install.sh` / `install.ps1` | Step 2 of the install: copy the artifacts to OpenCode's discovery paths |
 
 ## The `lib/` convention
 
@@ -395,6 +486,10 @@ command. Both stages have negative controls, in-script and in the wrapper.
   directory created by stride-lite through this port's workflow, and one created
   here through stride-lite's, is what would show the promise holds in practice.
   The fixtures assert it; nothing has exercised it.
+- **`lib/` placement is asserted, not known.** The installers copy `lib/` to
+  `<config-dir>/lib/` because the skills reference those specs by relative path,
+  but that is not an OpenCode discovery path and nothing here establishes that
+  the reference resolves from there in a live session.
 - **A fixture that is byte-identical but semantically stale is undetectable
   here.** If both ports drift together, every pin still passes. No offline check
   can see this — it needs a human noticing the corpus no longer reflects what the

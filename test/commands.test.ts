@@ -327,6 +327,85 @@ describe("README", () => {
     }
   });
 
+  it("documents the install as two steps, with both failure modes named", async () => {
+    const readme = (await Bun.file(join(repoRoot, "README.md")).text()).replace(/\s+/g, " ");
+
+    expect(readme).toContain("two separate steps");
+    // The trap. Without this sentence a user registers the plugin, gets no
+    // skills, and has nothing to go on.
+    expect(readme).toContain("OpenCode does NOT auto-discover skills or agents");
+    expect(readme).toContain("silent partial install");
+    // Both halves, not just the famous one: artifacts with no plugin
+    // registration is equally silent.
+    expect(readme).toMatch(/no hook section in `\.stride_lite\.md` ever fires/);
+  });
+
+  it("states the Windows verification status without overclaiming", async () => {
+    // Matched against whitespace-collapsed text: these are prose claims, and a
+    // line rewrap must not read as a regression.
+    const readme = (await Bun.file(join(repoRoot, "README.md")).text()).replace(/\s+/g, " ");
+
+    expect(readme).toContain("has **not** been run on Windows");
+    expect(readme).toContain("unverified");
+    // The claim that would be false.
+    expect(readme).not.toContain("Windows support");
+    expect(readme).not.toMatch(/cross-platform installers/i);
+  });
+
+  it("keeps the dormancy statement as strong as the code requires", async () => {
+    // The single easiest place to nominally pass while regressing the document:
+    // the count assertions need only the TOKEN "dormant", which survives inside
+    // a sentence saying the opposite. Assert the claim, not the word.
+    const readme = (await Bun.file(join(repoRoot, "README.md")).text()).replace(/\s+/g, " ");
+
+    expect(readme).toContain("dormant on today's build");
+    expect(readme).toContain("`before_task` and `after_task` do not fire");
+    // And the reason, which is what stops it being "re-enabled" by wishful edit.
+    expect(readme).toContain("emits no");
+    expect(readme).not.toMatch(/before_task fires when/i);
+  });
+
+  it("states the security model without overstating it", async () => {
+    const readme = (await Bun.file(join(repoRoot, "README.md")).text()).replace(/\s+/g, " ");
+
+    expect(readme).toContain("arbitrary shell");
+    expect(readme).toContain("does not validate, sanitize or inspect it");
+    expect(readme).toContain("Makefile");
+    // The marker must never read as an authorization control.
+    expect(readme).toContain("coordination, not security");
+    expect(readme).toContain("fails open");
+    expect(readme).toContain("trivially forged");
+  });
+
+  it("has a hook table matching the constants src/index.ts exports", async () => {
+    // A README hook table is the easiest thing in the repo to write
+    // aspirationally. Drive it from the source constants.
+    const readme = await Bun.file(join(repoRoot, "README.md")).text();
+    const index = await Bun.file(join(repoRoot, "src/index.ts")).text();
+
+    const constant = (name: string): string => {
+      const m = index.match(new RegExp(`${name} = "([^"]+)"`));
+      expect(m).not.toBeNull();
+      return m![1]!;
+    };
+
+    const table = readme.split("## Hook triggers")[1]!.split(/^## /m)[0]!;
+    expect(table).toContain(constant("BEFORE_TASK_SKILL"));
+    expect(table).toContain(constant("AFTER_TASK_SKILL"));
+    expect(table).toContain(constant("COMPLETION_HEADING"));
+    expect(table).toContain("tool.execute.before");
+    expect(table).toContain("tool.execute.after");
+  });
+
+  it("carries a does-NOT block naming the hard rules", async () => {
+    const readme = await Bun.file(join(repoRoot, "README.md")).text();
+    const block = readme.split("## What this plugin does NOT do")[1]!.split(/^## /m)[0]!;
+
+    expect(block).toContain("No Stride API calls");
+    expect(block).toContain(".stride_auth.md");
+    expect(block).toContain("environment cache");
+  });
+
   it("no longer claims the commands are unported", async () => {
     const readme = await Bun.file(join(repoRoot, "README.md")).text();
 
