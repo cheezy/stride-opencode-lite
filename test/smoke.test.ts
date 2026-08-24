@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { existsSync } from "node:fs";
 import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -378,25 +379,57 @@ describe("test/smoke.sh", () => {
   it("fails when a vendored TEMPLATE is tampered with", async () => {
     // The reference the offline diff rests on. It was added to the presence and
     // inventory stages but not to the hash loop, so appending a line to it left
-    // the suite green — a hash nobody checks, the same defect class the commit
-    // stage was added to fix.
+    // the suite green — a hash nobody checks.
+    //
+    // Pinned OFFLINE deliberately: stride-lite is a sibling checkout, absent for
+    // any consumer, so asserting a stage that SKIPs without it would make a
+    // clean clone red. Offline is also the assertion that matters.
     const fixtures = await treeCopy("fixtures");
     const target = join(fixtures, "templates/goal.md.tpl");
     await Bun.write(target, (await Bun.file(target).text()) + "JUNK\n");
 
-    const { stderr, exitCode } = await run({ STRIDE_SMOKE_FIXTURES_DIR: fixtures });
+    const { stderr, exitCode } = await run({
+      STRIDE_SMOKE_FIXTURES_DIR: fixtures,
+      STRIDE_LITE_ROOT: "/nonexistent/stride-lite",
+    });
 
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("FAIL  fixtures: every vendored file matches its pinned stride-lite sha256");
-    // And it is tied to stride-lite itself, not merely to a constant in the script.
-    expect(stderr).toContain("FAIL  fixtures: the recorded stride-lite commit resolves in that repository");
   });
 
+  it.skipIf(!existsSync(join(repoRoot, "../stride-lite/.git")))(
+    "ties a tampered template to stride-lite itself, not only to a constant",
+    async () => {
+      // The other half, and it needs the real sibling. Degrades to a stated skip
+      // when stride-lite is absent — the same rule the shell script applies to
+      // itself, rather than a failure on a clean clone.
+      const fixtures = await treeCopy("fixtures");
+      const target = join(fixtures, "templates/goal.md.tpl");
+      await Bun.write(target, (await Bun.file(target).text()) + "JUNK\n");
+
+      const { stderr, exitCode } = await run({
+        STRIDE_SMOKE_FIXTURES_DIR: fixtures,
+        STRIDE_LITE_ROOT: join(repoRoot, "../stride-lite"),
+      });
+
+      expect(exitCode).not.toBe(0);
+      expect(stderr).toContain(
+        "FAIL  fixtures: the recorded stride-lite commit resolves in that repository",
+      );
+    },
+  );
+
   it("SKIPS the commit stage when STRIDE_LITE_ROOT is not a repository of its own", async () => {
-    // --is-inside-work-tree walks UPWARD, so a plain directory inside the
-    // enclosing checkout used to resolve the commit against the wrong repo and
-    // FAIL. The contract is to skip.
-    const plain = await mkdtemp(join(tmpdir(), "stride-lite-plain-"));
+    // The directory must sit INSIDE a real git repository, which is why it is
+    // created under repoRoot rather than in the OS temp dir: tmpdir() is inside
+    // no repository, so `rev-parse --is-inside-work-tree` exits 128 there and
+    // the OLD, buggy guard also skipped. A control that passes against the code
+    // it was written to pin is not a control.
+    //
+    // The reproducing case is the one the default STRIDE_LITE_ROOT occupies: a
+    // plain directory inside the enclosing checkout, where the old guard walked
+    // upward, found a repository, and resolved the commit against the wrong one.
+    const plain = await mkdtemp(join(repoRoot, ".tmp-stride-lite-plain-"));
     scratchDirs.push(plain);
 
     const { stdout, exitCode } = await run({ STRIDE_LITE_ROOT: plain });

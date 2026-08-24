@@ -900,8 +900,17 @@ $(diff -u "$WORK/at_commit.md" "$FIXTURES_DIR/$rel" | head -20)"
         for pair in "templates/goal.md.tpl:tpl_goal_at_commit" \
                     "templates/taskN.md.tpl:tpl_taskn_at_commit"; do
           rel="${pair%%:*}"; at="${pair##*:}"
-          diff -q "$FIXTURES_DIR/$rel" "$WORK/$at.txt" >/dev/null || commitdrift="$commitdrift
+          # Non-empty precondition, as every other extraction in this file has.
+          # Without it an upstream heading rename prints the whole vendored file
+          # as a deletion, which reads as template drift rather than as the
+          # upstream restructure it actually is.
+          if [ ! -s "$WORK/$at.txt" ]; then
+            commitdrift="$commitdrift
+  $rel: the block was not found at $EXPECTED_STRIDE_LITE_COMMIT — upstream restructured its headings"
+          elif ! diff -q "$FIXTURES_DIR/$rel" "$WORK/$at.txt" >/dev/null; then
+            commitdrift="$commitdrift
 $(diff -u "$WORK/$at.txt" "$FIXTURES_DIR/$rel" | head -20)"
+          fi
         done
       else
         commitdrift="$commitdrift

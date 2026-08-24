@@ -47,3 +47,7 @@ bun.lock
 # Ignore before the first session — .gitignore is inert for a path git already
 # tracks.
 .exploratory/
+
+# Scratch directories the smoke wrapper creates inside the repo, so its
+# not-a-repository control has a real enclosing git repository to sit in.
+.tmp-stride-lite-plain-*

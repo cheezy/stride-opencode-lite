@@ -1,7 +1,7 @@
 # Fixtures
 
-Vendored verbatim from **stride-lite**, the source of truth for the lite family's
-on-disk artifacts.
+Vendored verbatim from **stride-lite**, the source of truth for the lite
+family's on-disk artifacts.
 
 | Field | Value |
 |---|---|
@@ -21,30 +21,13 @@ on-disk artifacts.
 | `templates/taskN.md.tpl` | `f5ff7db2802fbe5c9ac4d8ffafddc45ea09bdbca55541aed02f54552567cfedd` | 81 lines |
 
 `templates/` holds the two template blocks extracted verbatim from stride-lite's
-`create-goal` SKILL.md at the commit above — `test/smoke.sh` re-extracts them
+`create-goal` SKILL.md at the commit above. `test/smoke.sh` re-extracts them
 from `git show <commit>:skills/stride-lite-create-goal/SKILL.md` and diffs, so
-they are tied to stride-lite itself rather than only to a constant in the script. They are not decoration: they are what lets a template
-failure print a real `diff -u` **offline**, which is the only case a consumer
-ever has. A sha256 mismatch on its own says something changed without saying
-what.
+they are tied to stride-lite itself rather than only to a constant in the script.
 
-Copied with a plain `cp` and **no normalization of any kind**. All three end with
-a single trailing newline and contain no CR bytes; a newline or line-ending
-massage would itself be the divergence these files exist to detect.
-
-## Verbatim means verbatim — do not re-brand
-
-`expected-output/goal.md` names `/stride-lite:create-goal` in its body. That is
-**deliberate and must not be changed** to this port's command name: these files
-are upstream's bytes, and re-branding them is precisely the divergence the pinned
-hashes exist to catch.
-
-Consequence for future work: `test/skills.test.ts`, `test/agents.test.ts` and
-`test/commands.test.ts` each scan for the `/stride-lite:` token as a foreign-host
-artifact. Those scans are scoped to `skills/`, `agents/` and `commands/` and do
-not reach here. **Any future repo-wide foreign-token scan must exclude
-`fixtures/`** or it will flag this file and invite exactly the edit that breaks
-byte-identity.
+They are not decoration: they are what lets a template failure print a real
+`diff -u` **offline**, which is the only case a consumer ever has. A sha256
+mismatch on its own says something changed without saying what.
 
 ## Why the commit matters
 
@@ -74,10 +57,10 @@ additional sibling tasks, and only `task1.md` is shipped to keep the example
 focused.
 
 They are therefore **not** mechanically derivable from the skills' template
-blocks, which are placeholder-driven (`<task.title>`, `<task.description>`, …).
+blocks, which are placeholder-driven (`<task.title>`, `<task.description>`).
 Substituting placeholders for real prose is the decomposer's job, and it needs a
-model. No offline check can render these files from the templates, and stride-lite
-does not attempt it either.
+model. No offline check can render these files from the templates, and
+stride-lite does not attempt it either.
 
 What they are good for is what the checks in `test/smoke.sh` actually do with
 them: pin them byte-for-byte so a copy cannot drift from upstream unnoticed, and
