@@ -118,7 +118,6 @@ describe("test/smoke.sh", () => {
       "fixtures: goal.md carries the goal template's headings, in order",
       "fixtures: the conformance check detects a renamed heading (negative control)",
       "fixtures: the byte and presence gates reject a one-byte change and an absent file (negative control)",
-      "fixtures: the recorded stride-lite commit resolves in that repository",
       "commands: every activated skill name resolves to a skill on disk",
       "commands: the create commands' defaults match the lib/parse_args spec",
       "commands: each flow list has one entry per step in the skill it activates",
@@ -225,6 +224,22 @@ describe("test/smoke.sh", () => {
 
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("FAIL  commands: the create commands' defaults match the lib/parse_args spec");
+  });
+
+  it("runs the commit-resolution stage when stride-lite is on disk", async () => {
+    // Deliberately NOT in the unconditional label list above: this stage SKIPs
+    // when stride-lite is absent, which is correct and is what a consumer — and
+    // a clean clone in a temp directory — always sees. Asserting its PASS
+    // unconditionally made `bun test` red on any clean checkout.
+    const { stdout, exitCode } = await run();
+
+    expect(exitCode).toBe(0);
+    const label = "fixtures: the recorded stride-lite commit resolves in that repository";
+    if (existsSync(join(repoRoot, "../stride-lite/.git"))) {
+      expect(stdout).toContain(`PASS  ${label}`);
+    } else {
+      expect(stdout).toContain(`SKIP  ${label}`);
+    }
   });
 
   it("fails when a vendored fixture is missing, and never skips it", async () => {
