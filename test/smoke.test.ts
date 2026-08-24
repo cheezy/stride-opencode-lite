@@ -104,6 +104,8 @@ describe("test/smoke.sh", () => {
       "the two goal.md template extractors agree",
       "the goal.md template matches the stride-lite source hash",
       "the goal.md template hash pin rejects altered content (negative control)",
+      "skills: no leftover text-transform damage",
+      "skills: the damage sweep detects a corrupted sentence (negative control)",
       "readme: the documented counts match the repository",
       "readme: the count check detects a wrong number (negative control)",
       "readme: the documented counts match what install.sh delivers",

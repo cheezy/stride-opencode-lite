@@ -675,6 +675,40 @@ if [ -s "$WORK/wf_allow.txt" ]; then
 fi
 
 
+# --- The skills carry no leftover transform damage ------------------------
+# Every skill body here was transliterated from stride-lite, and three separate
+# passes of that transform left broken sentences behind: ":," where an
+# instruction was deleted mid-clause, a capital mid-sentence where a phrase was
+# substituted, and a displaced parenthetical. Two rounds of hand-sweeping missed
+# sites because each swept only for the signature it had just seen. This stage
+# holds the whole signature set so the next transform cannot quietly add one.
+damage=""
+for pattern in ':,' ',,' '\. \.' '—,' '\*\* [A-Z][a-z]+ the plugin' ' and stop [A-Z][a-z]'; do
+  hits="$(grep -rnE "$pattern" "$SKILLS_DIR"/*/SKILL.md 2>/dev/null | head -3)"
+  [ -n "$hits" ] && damage="$damage
+  pattern [$pattern]:
+$(printf '%s' "$hits" | cut -c1-120 | sed 's/^/    /')"
+done
+if [ -z "$damage" ]; then
+  ok "skills: no leftover text-transform damage"
+else
+  nope "skills: no leftover text-transform damage" "$damage"
+fi
+
+# Negative control, driven through the same loop.
+mkdir -p "$WORK/dmg"
+printf 'has the same terminal shape:, stop, surface\n' > "$WORK/dmg/SKILL.md"
+ctrl_damage=0
+for pattern in ':,' ',,'; do
+  grep -qE "$pattern" "$WORK/dmg/SKILL.md" && ctrl_damage=1
+done
+if [ "$ctrl_damage" -eq 1 ]; then
+  ok "skills: the damage sweep detects a corrupted sentence (negative control)"
+else
+  nope "skills: the damage sweep detects a corrupted sentence (negative control)" \
+       "the pattern set did not match known-corrupt text"
+fi
+
 # --- README: documented counts vs disk AND vs what the installer delivers -
 # test/commands.test.ts already pins README <-> repository. This stage is here
 # because it can do the thing a static test structurally cannot: run install.sh
