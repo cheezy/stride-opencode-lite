@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — canon anchors for `decision-matrix-authority` and `row-precedence` (W2119)
+
+The port's workflow skill now carries a `<!-- canon:<id> v<version> -->` anchor
+beside each of the two rules it states in its own voice: `row-precedence` beside
+the instruction to read the matrix rows top to bottom, and
+`decision-matrix-authority` beside the statement that the table is normative on
+its own here. Neither anchor restates the rule's substance — the canon owns
+that, and a second copy of it in a port is the drift the anchors exist to catch.
+`test/skills.test.ts` pins both — binding each anchor to the first line of the
+paragraph it governs, so the assertions check placement and not merely
+presence — and pins that neither is duplicated. The release gate's own scan is
+presence-and-version only and context-free, so an anchor drifting away from its
+rule would still report `ok` there.
+
+A short **Canon-governed** note now attributes the matrix rows and the
+row-shape paragraphs below to `row-precedence` rather than to
+`decision-matrix-authority`, whose anchor precedes them. Without it a
+maintainer editing `No separate defect row` — which the canon's `applies_to`
+reason for this port quotes — is prompted for the wrong entry. stride resolves
+the same ambiguity the same way in its own workflow skill.
+
+No anchor was added for `reason-code-vocabulary`. The canon records this port's
+row as `deferred`, and an anchor beside a deferral would report a compliance the
+port does not have; the test asserts its absence for that reason.
+
+### Fixed — the workflow skill's description of its own canon row (W2119)
+
+The `reason_code` section said the canon "marks it required for every port" and
+that the drift check "reports the cell missing", with the canon's row named as
+the thing still to correct. All three were true when written and none is now:
+the canon records per-port applicability, this port's row is `deferred` with the
+same structural reason the section gives, and the check reports it deferred
+rather than missing. The structural argument for the deferral, and the condition
+under which it reopens, are unchanged.
+
+Documentation and tests only. No rule, flow or reference implementation moved.
+
 ## [0.1.0] - 2026-08-24
 
 First release. The OpenCode port of `stride-lite`: it turns a prompt into

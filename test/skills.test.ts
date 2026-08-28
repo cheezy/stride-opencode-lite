@@ -191,3 +191,56 @@ describe("the skills directory", () => {
     }
   });
 });
+
+describe("port-canon anchors", () => {
+  // The fleet drift check (stride/scripts/check-port-canon.sh) scans for these
+  // comments by id and version. It is presence-and-version only, so a reworded
+  // anchor, a bumped version, or a second copy elsewhere in the tree changes
+  // the reported verdict without changing any prose a reader would notice.
+  const WORKFLOW = "stride-opencode-lite-workflow";
+
+  // These assert PLACEMENT, not just presence. The release gate's own scan is
+  // presence-and-version only and is context-free, so an anchor moved away from
+  // the rule it governs still reports `ok` there. Binding each anchor to the
+  // first line of the paragraph it governs is what makes "beside" checkable.
+  it("anchors decision-matrix-authority beside the port's own matrix", async () => {
+    expect(await readSkill(WORKFLOW)).toContain(
+      "<!-- canon:decision-matrix-authority v1 -->\n" +
+        "**This table is normative on its own in this port.**",
+    );
+  });
+
+  it("anchors row-precedence beside the port's own precedence statement", async () => {
+    expect(await readSkill(WORKFLOW)).toContain(
+      "<!-- canon:row-precedence v1 -->\n" +
+        "Read the rows top to bottom and take the first that matches.",
+    );
+  });
+
+  it("attributes the trailing row-shape paragraphs to row-precedence", async () => {
+    // Those paragraphs sit below the decision-matrix-authority anchor, so
+    // without this note a maintainer editing them is prompted for the wrong
+    // canon entry. stride resolves the same ambiguity the same way.
+    expect(await readSkill(WORKFLOW)).toContain(
+      "belong to entry `row-precedence`, not to `decision-matrix-authority`",
+    );
+  });
+
+  it("carries no anchor for the deferred reason_code rule", async () => {
+    // The canon records this port's reason-code-vocabulary row as `deferred`.
+    // An anchor beside a deferral would claim a compliance this port does not
+    // have, so its absence is the assertion.
+    expect(await readSkill(WORKFLOW)).not.toContain(
+      "<!-- canon:reason-code-vocabulary",
+    );
+  });
+
+  it("keeps exactly one anchor per entry in this skill", async () => {
+    const body = await readSkill(WORKFLOW);
+
+    for (const id of ["decision-matrix-authority", "row-precedence"]) {
+      const hits = body.match(new RegExp(`<!-- canon:${id} v\\d+ -->`, "g"));
+      expect(hits).toHaveLength(1);
+    }
+  });
+});
