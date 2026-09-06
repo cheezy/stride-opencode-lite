@@ -477,16 +477,16 @@ if slice_nonempty "step-7" "$WORK/wf_step7.txt"; then
   # A bare `3` is satisfied by any region containing the digit, so require the
   # cap named alongside it.
   if grep -q 'max_review_iterations' "$WORK/wf_step7.txt" \
-     && grep -qE 'max_review_iterations[^0-9]*3|3[^0-9]*max_review_iterations|cap[^0-9]*3' "$WORK/wf_step7.txt"; then
-    ok "workflow: the review cap is 3 in Step 7"
+     && grep -qE 'max_review_iterations[^0-9]*2|2[^0-9]*max_review_iterations|ceiling[^0-9]*2' "$WORK/wf_step7.txt"; then
+    ok "workflow: the review ceiling is 2 in Step 7"
   else
-    nope "workflow: the review cap is 3 in Step 7" "the cap sentence is missing from the Step 7 region"
+    nope "workflow: the review ceiling is 2 in Step 7" "the ceiling sentence is missing from the Step 7 region"
   fi
 fi
-if grep -qE '^\|.*`max_review_iterations`.*`3`' "$WORKFLOW"; then
-  ok "workflow: the review cap is 3 in the inputs table"
+if grep -qE '^\|.*`max_review_iterations`.*`2`' "$WORKFLOW"; then
+  ok "workflow: the review ceiling is 2 in the inputs table"
 else
-  nope "workflow: the review cap is 3 in the inputs table" "the inputs row no longer pins 3"
+  nope "workflow: the review ceiling is 2 in the inputs table" "the inputs row no longer pins 2"
 fi
 
 # --- Hook contract region ------------------------------------------------

@@ -226,10 +226,12 @@ describe("port-canon anchors", () => {
     );
   });
 
-  it("carries no anchor for the deferred reason_code rule", async () => {
-    // The canon records this port's reason-code-vocabulary row as `deferred`.
-    // An anchor beside a deferral would claim a compliance this port does not
-    // have, so its absence is the assertion.
+  it("carries no anchor for the not-applicable reason_code rule", async () => {
+    // The canon records this port's reason-code-vocabulary row as
+    // `not_applicable` -- D302 moved it off `deferred`, since `deferred`
+    // selects which checks run rather than saying how settled a decision is.
+    // An anchor on a narrowed cell would claim a compliance this port does
+    // not have, so its absence is the assertion.
     expect(await readSkill(WORKFLOW)).not.toContain(
       "<!-- canon:reason-code-vocabulary",
     );
@@ -238,9 +240,180 @@ describe("port-canon anchors", () => {
   it("keeps exactly one anchor per entry in this skill", async () => {
     const body = await readSkill(WORKFLOW);
 
-    for (const id of ["decision-matrix-authority", "row-precedence"]) {
+    for (const id of [
+      "decision-matrix-authority",
+      "row-precedence",
+      "review-round-cap",
+    ]) {
       const hits = body.match(new RegExp(`<!-- canon:${id} v\\d+ -->`, "g"));
       expect(hits).toHaveLength(1);
     }
+  });
+
+  // --- G417: the two-round review ceiling (W2172) -------------------------
+  // These rules land as prose: src/ wires hooks and the activation marker and
+  // never reads a review verdict, so there is no runtime to enforce them in.
+  // These pins are therefore the only mechanical bound the repository has.
+  // Every one was mutation-tested -- its clause deleted, this suite confirmed
+  // red on that named test, the clause restored.
+
+  it("anchors review-round-cap beside the port's own ceiling statement", async () => {
+    expect(await readSkill(WORKFLOW)).toContain(
+      "<!-- canon:review-round-cap v1 -->\n\n" +
+        "**Two review rounds is the ceiling",
+    );
+  });
+
+  it("performs the clamp in a step rather than only describing it", async () => {
+    // A bound stated only in the Inputs table does not bind the procedure
+    // that reads the value.
+    expect(await readSkill(WORKFLOW)).toContain(
+      "min(max_review_iterations, 2)",
+    );
+  });
+
+  it("records important and minor findings at the ceiling", async () => {
+    expect(await readSkill(WORKFLOW)).toContain(
+      "**Remaining `important` and `minor` findings are recorded, not fixed.**",
+    );
+  });
+
+  it("bounds the critical carve-out so it cannot renew", async () => {
+    // Pin BOTH halves. An earlier version pinned only the non-renewal
+    // sentence, so deleting the grant it bounds was invisible to the suite
+    // and left the disposition silently three-way.
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain("for exactly one further round");
+    expect(body).toContain(
+      "The exemption is spent once for the whole task and does not renew",
+    );
+    expect(body).toContain("**Never record a `critical` and complete.**");
+  });
+
+  it("pins the ceiling VALUE, not only the clamp formula", async () => {
+    // The clamp pin quotes min(max_review_iterations, 2), which survives a
+    // revert of the Inputs-table default -- only smoke.sh caught that.
+    const body = await readSkill(WORKFLOW);
+    expect(body).toMatch(/\|\s*`max_review_iterations`\s*\|[^|]*\|[^|]*\|\s*`2`\s*\|/);
+  });
+
+  it("withholds the record disposition where category cannot be read", async () => {
+    // The rendered issue bullet carries no `category`, so on the prose
+    // fallback the security carve-out has nothing to select on.
+    expect(await readSkill(WORKFLOW)).toContain(
+      "**The ceiling's record disposition is unavailable on this path too",
+    );
+  });
+
+  it("re-dispatches a failed reviewer once in every place that states it", async () => {
+    const body = await readSkill(WORKFLOW);
+    // Step 7's rule, the Edge-cases bullet and the quick-reference card must
+    // agree; the card calls itself "the complete list".
+    expect(body).toContain("is re-dispatched **once** and costs no round");
+    expect(body).toContain("On a second consecutive failure");
+    expect(body).toContain("a SECOND consecutive reviewer dispatch error");
+  });
+
+  it("never merely records a security finding, and judges it by subject", async () => {
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain("is never merely recorded, at any severity");
+    // `category` is a string the reviewer assigns itself, and this port's own
+    // contract files a not_met project check under `project_check`.
+    expect(body).toContain("**Judge by subject as well as by label:**");
+  });
+
+  it("voids the all-cosmetic branch on a standing escalation", async () => {
+    // The branch fires BEFORE the increment, so it never reaches the ceiling
+    // carve-outs -- every guard it needs, it needs in its own condition.
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain("**and no escalation is standing**");
+    expect(body).toContain("**voids the branch outright**");
+  });
+
+  it("re-reads severity and category in the all-cosmetic branch", async () => {
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain(
+      "**every** entry is a `minor` whose `category` is not `\"security\"` and whose subject is not security",
+    );
+    expect(body).toContain("is not coerced here either");
+  });
+
+  it("bounds a non-conforming approval by routing it into the loop", async () => {
+    // A path that looped without incrementing would be the one place this
+    // loop does not terminate by construction.
+    expect(await readSkill(WORKFLOW)).toContain(
+      "**route into the `changes_requested` branch below**",
+    );
+  });
+
+  it("tightens the prose fallback so a refusal cannot read as an approval", async () => {
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain(
+      "**Test for refusal first, and match the affirmative only at the start of the line.**",
+    );
+    expect(body).toContain(
+      "the report's `### Issues` subsection is empty or renders `- (none)`",
+    );
+  });
+
+  it("admits exactly the two sanctioned non-approval termini at Step 8", async () => {
+    expect(await readSkill(WORKFLOW)).toContain(
+      "this step reached one of the two sanctioned non-approval termini above",
+    );
+  });
+
+  it("forbids reporting a refused review as approved", async () => {
+    expect(await readSkill(WORKFLOW)).toContain(
+      "**Never write that a review which refused was approved.**",
+    );
+  });
+
+  it("carries the redaction rule at both recorded-finding write sites", async () => {
+    // Both write into a committed Completion Summary. Pinned per-site: a
+    // whole-file count passes when one site loses the clause and another
+    // gains one.
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain(
+      "write `[REDACTED — text embedded a credential]` in its place and identify the finding by its `file:line`",
+    );
+    expect(body).toContain(
+      "write `[REDACTED — text embedded a credential]` instead and identify it by its `file:line`",
+    );
+  });
+
+  it("adds no second cap identifier", async () => {
+    const body = await readSkill(WORKFLOW);
+    const names = new Set(body.match(/max_\w*iterations/g) ?? []);
+    expect([...names]).toEqual(["max_review_iterations"]);
+    // And the standing prohibition survives verbatim.
+    expect(body).toContain(
+      "**Do not add a second cap and do not invent a security-specific terminal state**",
+    );
+  });
+
+  it("records dispatch_count as cannot-apply, by name and with no anchor", async () => {
+    // The canon's not_applicable reason cites grounds the port records; until
+    // now nothing here named the key, so the citation was uncheckable.
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain(
+      "**On the fleet-wide `dispatch_count` key — it cannot apply here",
+    );
+    expect(body).not.toContain("<!-- canon:dispatch-count-telemetry");
+  });
+
+  it("describes the canon's reason_code row as not_applicable, not deferred", async () => {
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain("The canon carries this port's row as `not_applicable`");
+    expect(body).not.toContain("carries this port's row as `deferred`");
+  });
+
+  it("leaves no stale cap-of-three anywhere in the skill", async () => {
+    const body = await readSkill(WORKFLOW);
+    expect(body).not.toMatch(/default 3|cap of 3|hit 3 iterations|max_review_iterations \(3\)/);
+    // The digit forms above missed a stale bullet phrased entirely in words
+    // ("Review-loop exhausts max_review_iterations -- and stop without
+    // writing the Completion Summary"). Pin the wording too.
+    expect(body).not.toContain("Review-loop exhausts max_review_iterations");
+    expect(body).not.toContain("explorer or reviewer dispatch errors");
   });
 });

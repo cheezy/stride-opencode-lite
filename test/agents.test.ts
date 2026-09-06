@@ -241,13 +241,95 @@ describe("untrusted-input framing", () => {
   });
 });
 
+// --- G417: the cosmetic finding class and the top-level verdict (W2172) ---
+// This port has no submission step and no validator: the reviewer writes the
+// report into a task file and the workflow reads it straight back. These pins
+// are the only mechanical bound on the contract. Each was mutation-tested --
+// its clause deleted, this suite confirmed red on that named test, restored.
+describe("cosmetic finding class", () => {
+  it("anchors cosmetic-finding-class beside the definition, not the mirror", async () => {
+    // The workflow skill's all-cosmetic branch is the mirror and takes no
+    // anchor; the canon's check_hint puts it beside the definition.
+    expect(await readAgent("task-reviewer")).toContain(
+      "<!-- canon:cosmetic-finding-class v1 -->\n\n" +
+        "**`cosmetic` on an issue — a disposition, not a fourth severity.**",
+    );
+  });
+
+  it("keeps exactly one anchor per entry in the reviewer contract", async () => {
+    const body = await readAgent("task-reviewer");
+    for (const id of ["verdict-note", "cosmetic-finding-class"]) {
+      const hits = body.match(new RegExp(`<!-- canon:${id} v\\d+ -->`, "g"));
+      expect(hits).toHaveLength(1);
+    }
+  });
+
+  it("refuses the flag above minor", async () => {
+    expect(await readAgent("task-reviewer")).toContain(
+      "beside any severity other than `minor`, which covers `critical` and `important` alike",
+    );
+  });
+
+  it("refuses the flag on a security-category finding at any severity", async () => {
+    // The task's own security consideration: without this clause the flag
+    // could ship without its exclusion, which is worse than not porting it.
+    expect(await readAgent("task-reviewer")).toContain(
+      'A `cosmetic: true` beside `category: "security"`, at any severity',
+    );
+  });
+
+  it("refuses a non-boolean flag value", async () => {
+    expect(await readAgent("task-reviewer")).toContain(
+      '`1`, `"true"` and `"yes"` are not coerced',
+    );
+  });
+
+  it("keeps the finding when the flag is set", async () => {
+    expect(await readAgent("task-reviewer")).toContain(
+      "**The flag never removes the finding.**",
+    );
+  });
+
+  it("documents the top-level verdict vocabulary locally", async () => {
+    const body = await readAgent("task-reviewer");
+    expect(body).toContain(
+      '**The top-level `status` has exactly two values: `"approved"` and `"changes_requested"`.**',
+    );
+    expect(body).toContain("None of those six is ever legal at the top level");
+  });
+
+  it("defines approved as an empty issues array, minor included", async () => {
+    // The weaker "no critical or important" form lets a minor carrying
+    // category "security" ride an approval past every carve-out.
+    expect(await readAgent("task-reviewer")).toContain(
+      "**Emit `\"approved\"` only when `issues[]` is empty**",
+    );
+  });
+
+  it("adds no issue_counts key this port does not have", async () => {
+    expect(await readAgent("task-reviewer")).not.toContain("issue_counts");
+  });
+
+  it("bounds what it documents locally to the three keys the workflow reads", async () => {
+    // A fuller local table becomes a second definition free to drift from the
+    // one it was copied from.
+    expect(await readAgent("task-reviewer")).toContain(
+      "**Only the three keys the workflow reads are documented here**",
+    );
+  });
+});
+
 describe("Review Report structured keys", () => {
   it("keeps the schema version and the security_considerations key set", async () => {
     // The workflow skill parses these; renumbering or rewording them is a
     // documented pitfall.
     const body = await readAgent("task-reviewer");
 
-    expect(body).toContain('schema_version `"1.6"`');
+    expect(body).toContain('schema_version `"1.7"`');
+    // 1.7 is where the optional `cosmetic` key on issues[] arrived upstream.
+    // Pinned negatively too: a half-done bump (one of the two citation sites)
+    // would otherwise pass this assertion while the file contradicts itself.
+    expect(body).not.toContain('"1.6"');
     expect(body).toContain("<!-- canon:verdict-note v1 -->");
 
     // Bind to the fenced block itself. Every one of these words also appears in
