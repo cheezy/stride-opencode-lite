@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-09-06
+## [0.3.0] - 2026-09-07
 
 ### Added — a back-reference beside the three anchored rules that lacked one (W2138)
 
@@ -21,6 +21,8 @@ and states that altering what the rule obliges moves the entry's version and the
 anchor's together. None restates the rule. Each sits after the paragraph its
 anchor is pinned to rather than between the two, because the suite asserts that
 adjacency, and none writes the anchor comment's own token, which the suite counts.
+
+## [0.2.0] - 2026-09-06
 
 ### Added — the two-round review ceiling, and what reaching it now does (W2172)
 
