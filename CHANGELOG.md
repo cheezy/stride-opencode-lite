@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-09-06
 
+### Added — a back-reference beside the three anchored rules that lacked one (W2138)
+
+This port already carried a combined back-reference for `decision-matrix-authority`
+and `row-precedence`, and correctly carries none for `reason-code-vocabulary` or
+`dispatch-count-telemetry`, which it does not adopt. Three paragraphs close the
+remaining gaps: the cosmetic class and the verdict-note rule in
+`agents/task-reviewer.md`, and the review ceiling in the workflow skill. The
+existing three paragraphs are untouched.
+
+Each new paragraph names the owning canon entry, leaves the wording to this port,
+and states that altering what the rule obliges moves the entry's version and the
+anchor's together. None restates the rule. Each sits after the paragraph its
+anchor is pinned to rather than between the two, because the suite asserts that
+adjacency, and none writes the anchor comment's own token, which the suite counts.
+
 ### Added — the two-round review ceiling, and what reaching it now does (W2172)
 
 The fleet canon (`stride/docs/port-canon.md`, entry `review-round-cap`) puts the
