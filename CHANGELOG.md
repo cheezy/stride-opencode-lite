@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed — the reason_code paragraph counted values it never named (D305)
+
+The paragraph explaining why the fleet's closed `reason_code` set is not adopted
+here opened its case with a count: four of the six values were said to be
+unreachable by this loop. Which four was stated nowhere, and the claim is
+contradicted for at least `hook_body_empty`, which this loop reaches whenever a
+`.stride_lite.md` section is an empty fenced block. **D302** struck the identical
+clause from the canon's own reasons for this port and for `stride-lite`, keeping
+only what was verified — the transport ground and the reopen condition. The port
+kept its copy, so the two disagreed.
+
+The count is now gone from this port. What remains is the argument that survived
+in the canon: this plugin emits no `workflow_steps` object and has no completion
+endpoint, so the rejection that makes the canonical set closed has nothing to run
+in, and importing the vocabulary would leave two spellings for one skip. The
+decision is unchanged, the canon row stays `not_applicable`, and this port still
+carries no anchor for that rule — a test already pins that absence, and a second
+one now pins the count's.
+
+The four sites this defect was filed against had already been corrected by W2172;
+only the count remained.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added — a back-reference beside the three anchored rules that lacked one (W2138)

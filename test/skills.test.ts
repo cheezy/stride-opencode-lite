@@ -407,6 +407,17 @@ describe("port-canon anchors", () => {
     expect(body).not.toContain("carries this port's row as `deferred`");
   });
 
+  it("keeps no unenumerated count of unreachable reason_code values", async () => {
+    // D302 struck the same clause from the canon's own reasons: it counted how
+    // many of the six codes a port's loop cannot reach, named which nowhere,
+    // and was contradicted for at least `hook_body_empty`. D305 struck it here
+    // for the same reason. The transport ground and the reopen condition are
+    // what survive, so the absence of the count is the assertion.
+    const body = await readSkill(WORKFLOW);
+    expect(body).not.toMatch(/(Four|Two|Three|Five|Six) of the six/);
+    expect(body).not.toContain("name conditions this loop cannot reach");
+  });
+
   it("leaves no stale cap-of-three anywhere in the skill", async () => {
     const body = await readSkill(WORKFLOW);
     expect(body).not.toMatch(/default 3|cap of 3|hit 3 iterations|max_review_iterations \(3\)/);
