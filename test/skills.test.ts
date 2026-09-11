@@ -407,6 +407,18 @@ describe("port-canon anchors", () => {
     expect(body).not.toContain("carries this port's row as `deferred`");
   });
 
+  it("declines stride's skip enum from this port's own runtime, not stride-lite's", async () => {
+    // The clause dates to the original port commit and was never re-voiced:
+    // it argued from stride-lite being Claude-Code-only. This is an OpenCode
+    // plugin carrying its own three agents in agents/, so the conclusion holds
+    // but the ground had to come from this port. The paste must not return.
+    const body = await readSkill(WORKFLOW);
+    expect(body).toContain(
+      "this port is an OpenCode plugin carrying its own three agents in `agents/`",
+    );
+    expect(body).not.toContain("stride-lite is Claude-Code-only");
+  });
+
   it("keeps no unenumerated count of unreachable reason_code values", async () => {
     // D302 struck the same clause from the canon's own reasons: it counted how
     // many of the six codes a port's loop cannot reach, named which nowhere,

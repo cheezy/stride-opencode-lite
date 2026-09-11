@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the skip-enum paragraph argued from stride-lite's runtime, not this one (D307)
+
+The paragraph declining stride's five-value skip enum gave its ground as
+"stride-lite is Claude-Code-only with the agents always available". That is a
+claim about a different port, and "Claude-Code-only" is false of this one: this
+is an OpenCode plugin, and it carries its own three agents in `agents/`
+(`create-decomposer.md`, `task-explorer.md`, `task-reviewer.md`).
+
+The conclusion was never in doubt — `no_subagent_support` and
+`self_reported_exploration` describe a runtime with no subagents or a human
+standing in for one, and neither is reachable here — so only the subject moved.
+The clause now argues from this port's own runtime and its own agents. The
+sentence dates to the original port commit and had not been re-voiced since; a
+test now pins the corrected subject so the paste cannot return.
+
 ### Fixed — the reason_code paragraph counted values it never named (D305)
 
 The paragraph explaining why the fleet's closed `reason_code` set is not adopted
