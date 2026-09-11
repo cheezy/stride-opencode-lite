@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the curl guard named in the list of what this plugin does not do (W2186)
+
+The "What this plugin does NOT do" list gains a bullet for the fleet's
+stdout-preservation curl guard. The list already records that nothing here talks
+to a server; this makes the consequence explicit, so the missing guard reads as an
+absence of traffic rather than an unfinished port. Unlike the two sibling lite
+ports there is no stop-gate section to sit beside — the canon records this port
+`not_applicable` for that rule and a narrowed cell owes no anchor — so the bullet
+list is the right home.
+
 ### Fixed — the skip-enum paragraph argued from stride-lite's runtime, not this one (D307)
 
 The paragraph declining stride's five-value skip enum gave its ground as

@@ -260,6 +260,12 @@ agents' `tools` maps and `permission` blocks.
   a board. The output is markdown on disk and what you do with it is yours.
 - **No environment cache and no changed-files upload.** Two things the full
   Stride plugin does that this one deliberately does not.
+- **No stdout-preservation curl guard, and none is owed.** The full plugin refuses
+  a Stride API curl that hides its reply, because that reply is where a diff gets
+  parsed from. With no API call in this tree there is no reply to hide, so the
+  rule has nothing here to govern — an absence of traffic, not an unfinished port.
+  It becomes owed the moment this plugin gains a call that returns something worth
+  reading.
 - **No `AGENTS.md` installed into your project.** The installers never write it.
 - **`init` never runs a hook section.** It writes the config file and stops;
   running one there would execute it twice.
