@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1] - 2026-10-01
 
 ### Added — the curl guard named in the list of what this plugin does not do (W2186)
 
@@ -53,6 +53,10 @@ one now pins the count's.
 
 The four sites this defect was filed against had already been corrected by W2172;
 only the count remained.
+
+### Added — a release runbook for this repository (W2173)
+
+`RELEASE.md` records how this repository is released, as its own history shows it: which file holds the version, how the changelog is shaped (with any ambiguity in that history stated rather than resolved), whether a catalog must be synced afterwards, and the one-line check for whether the changelog's top heading is already tagged — the check that would have caught entries appended under a released heading. Documentation only; no behaviour changes.
 
 ## [0.3.0] - 2026-09-07
 
